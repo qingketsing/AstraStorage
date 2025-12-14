@@ -1,0 +1,55 @@
+# Docker ignore file for multi_driver project
+
+# Binaries
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binaries
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go workspace file
+go.work
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local data
+/data/
+uploads/
+*.log
+
+# Docker volumes
+node*_data/
+
+# Git
+.git/
+.gitignore
+
+# Documentation (keep in image for reference)
+# README.md
+# *.md
+
+# Scripts (not needed in container)
+scripts/
+*.ps1
+
+# Development files
+TODO
+遇到的问题.md
+
+# Frontend (if not needed)
+single_drive/frontend/node_modules/

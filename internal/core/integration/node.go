@@ -1,0 +1,140 @@
+package integration
+
+import (
+	"multi_driver/internal/core/cluster"
+	"multi_driver/internal/core/consensus"
+	"multi_driver/internal/core/consensus/raft"
+)
+
+// Node 表示一个完整的分布式节点，整合了 cluster 和 raft
+type Node struct {
+	ID      string
+	Address string
+
+	// Cluster 层
+	Discovery  *cluster.DiscoveryManager
+	Membership *cluster.MembershipManager
+
+	// Consensus 层
+	Raft        *raft.Raft
+	Coordinator *consensus.LeaderCoordinator
+
+	// RPC 通信
+	rpcServer *cluster.RaftRPCServer
+	peers     []raft.Peer
+}
+
+// NewNode 创建一个完整的节点
+// me: 当前节点在整个集群中的索引（0-based）
+// peerAddresses: 其他节点的地址列表（不包括自己）
+func NewNode(id, address string, me int, peerAddresses []string, persister raft.Persister, applyCh chan raft.ApplyMsg) (*Node, error) {
+	node := &Node{
+		ID:      id,
+		Address: address,
+	}
+
+	// 1. 初始化 Discovery
+	node.Discovery = cluster.NewDiscoveryManager(id, address, "")
+
+	// 2. 创建 Raft peers（连接到其他节点）
+	node.peers = make([]raft.Peer, len(peerAddresses))
+	for i, addr := range peerAddresses {
+		node.peers[i] = cluster.NewRaftRPC(addr)
+	}
+
+	// 3. 初始化 Raft
+	node.Raft = raft.Make(node.peers, me, persister, applyCh)
+
+	// 4. 创建 RaftRPC 服务器包装器
+	rpcWrapper := &RaftRPCWrapper{raft: node.Raft}
+	node.rpcServer = cluster.NewRaftRPCServer(rpcWrapper)
+
+	// 5. 将 Raft RPC 服务器注册到 Discovery
+	node.Discovery.SetRaftRPCServer(node.rpcServer)
+
+	// 6. 初始化 Membership
+	node.Membership = cluster.NewMembershipManager(id, node.Discovery)
+
+	// 7. 初始化 Leader Coordinator
+	node.Coordinator = consensus.NewLeaderCoordinator(node.Raft, node.Membership)
+
+	// 8. 启动服务
+	if err := node.Discovery.Start(); err != nil {
+		return nil, err
+	}
+
+	return node, nil
+}
+
+// RaftRPCWrapper 包装 Raft 实例以实现 RaftInterface
+type RaftRPCWrapper struct {
+	raft *raft.Raft
+}
+
+func (w *RaftRPCWrapper) RequestVote(args *cluster.RequestVoteArgs, reply *cluster.RequestVoteReply) {
+	// 调用 Raft 的 RequestVote 方法
+	rArgs := &raft.RequestVoteArgs{
+		Term:         args.Term,
+		CandidateId:  args.CandidateId,
+		LastLogIndex: args.LastLogIndex,
+		LastLogTerm:  args.LastLogTerm,
+	}
+	rReply := &raft.RequestVoteReply{}
+
+	w.raft.RequestVote(rArgs, rReply)
+
+	reply.Term = rReply.Term
+	reply.VoteGranted = rReply.VoteGranted
+}
+
+func (w *RaftRPCWrapper) AppendEntries(args *cluster.AppendEntriesArgs, reply *cluster.AppendEntriesReply) {
+	// 转换日志条目
+	entries := make([]raft.LogEntry, len(args.Entries))
+	for i, e := range args.Entries {
+		entries[i] = raft.LogEntry{
+			Index:   e.Index,
+			Term:    e.Term,
+			Command: e.Command,
+		}
+	}
+
+	rArgs := &raft.AppendEntryArgs{
+		Term:         args.Term,
+		LeaderId:     args.LeaderId,
+		PrevLogIndex: args.PrevLogIndex,
+		PrevLogTerm:  args.PrevLogTerm,
+		Entries:      entries,
+		LeaderCommit: args.LeaderCommit,
+	}
+	rReply := &raft.AppendEntryReply{}
+
+	w.raft.AppendEntries(rArgs, rReply)
+
+	reply.Term = rReply.Term
+	reply.Success = rReply.Success
+	reply.ConflictIndex = rReply.ConflictIndex
+	reply.ConflictTerm = rReply.ConflictTerm
+}
+
+// Stop 停止节点
+func (node *Node) Stop() {
+	node.Discovery.Stop()
+	node.Raft.Kill()
+}
+
+// IsLeader 检查当前节点是否为 Leader
+func (node *Node) IsLeader() bool {
+	_, isLeader := node.Raft.GetState()
+	return isLeader
+}
+
+// GetTerm 获取当前任期
+func (node *Node) GetTerm() int {
+	term, _ := node.Raft.GetState()
+	return term
+}
+
+// Start 向 Raft 提交命令
+func (node *Node) Start(command interface{}) (int, int, bool) {
+	return node.Raft.Start(command)
+}

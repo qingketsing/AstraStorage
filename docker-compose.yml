@@ -1,0 +1,149 @@
+services:
+  node-0:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: multi-driver-node-0
+    hostname: node-0
+    command: >
+      -id node-0
+      -addr node-0:29001
+      -me 0
+      -peers node-1:29001,node-2:29001,node-3:29001,node-4:29001
+      -health-port 9081
+    ports:
+      - "29001:29001"
+      - "9081:9081"
+    volumes:
+      - node0_data:/data
+    networks:
+      - cluster-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9081/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  node-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: multi-driver-node-1
+    hostname: node-1
+    command: >
+      -id node-1
+      -addr node-1:29001
+      -me 1
+      -peers node-0:29001,node-2:29001,node-3:29001,node-4:29001
+      -health-port 9081
+    ports:
+      - "29002:29001"
+      - "9082:9081"
+    volumes:
+      - node1_data:/data
+    networks:
+      - cluster-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9081/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  node-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: multi-driver-node-2
+    hostname: node-2
+    command: >
+      -id node-2
+      -addr node-2:29001
+      -me 2
+      -peers node-0:29001,node-1:29001,node-3:29001,node-4:29001
+      -health-port 9081
+    ports:
+      - "29003:29001"
+      - "9083:9081"
+    volumes:
+      - node2_data:/data
+    networks:
+      - cluster-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9081/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  node-3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: multi-driver-node-3
+    hostname: node-3
+    command: >
+      -id node-3
+      -addr node-3:29001
+      -me 3
+      -peers node-0:29001,node-1:29001,node-2:29001,node-4:29001
+      -health-port 9081
+    ports:
+      - "29004:29001"
+      - "9084:9081"
+    volumes:
+      - node3_data:/data
+    networks:
+      - cluster-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9081/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  node-4:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: multi-driver-node-4
+    hostname: node-4
+    command: >
+      -id node-4
+      -addr node-4:29001
+      -me 4
+      -peers node-0:29001,node-1:29001,node-2:29001,node-3:29001
+      -health-port 9081
+    ports:
+      - "29005:29001"
+      - "9085:9081"
+    volumes:
+      - node4_data:/data
+    networks:
+      - cluster-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9081/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+networks:
+  cluster-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  node0_data:
+  node1_data:
+  node2_data:
+  node3_data:
+  node4_data:

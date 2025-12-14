@@ -1,0 +1,21 @@
+[X]Discovery 健康检查与 Raft 选举未联动，超时仅移除节点。
+[X]RPC 未实现 InstallSnapshot，错误重试/鉴权缺失。
+[X]复制模块逻辑尚未填充。
+
+
+Raft 共识与 Leader 选举：raft 完整实现并通过集成测试，可在 10s 超时（代码里默认 200–500ms 选举超时）自动选主；Leader 提供 Start 入口，所有写操作可走 Leader。
+HTTP RPC 通道：rpc.go 为 Raft 节点间的 RequestVote/AppendEntries 提供 HTTP/JSON 通道，支持多机部署。
+节点发现与心跳监控：cluster/discovery.go + heartbeat.go 支持节点注册 /join、心跳 /heartbeat，周期广播与健康检查，带采集 CPU/内存/磁盘/网卡带宽/活跃上下行；可配置网卡、磁盘路径，心跳超时会摘除节点并通知上层。
+成员视图与调度策略：cluster/membership.go 订阅发现事件，维护节点表，提供存储副本挑选（按磁盘空间）与下载节点挑选（按活跃下载数，可扩展带宽权重）。
+Leader 协调层：consensus/leader.go 作为胶水，感知 Raft 角色变更，封装 PlanUpload（选 3 副本并通过 Raft 记录操作）和 PlanDownload（选最佳节点）入口。
+节点集成封装：node.go 把 Discovery、Membership、Raft、LeaderCoordinator 和 RPC Server/Peers 组装为单机节点，可在不同地址/端口部署多节点；integration_test.go/simple_test.go 验证 3~5 节点选举、命令复制与故障切换。
+心跳采集测试与稳健性：cluster_test.go 覆盖心跳更新、超时摘除、带宽采样、系统指标采集等。
+内存持久化器：InMemoryPersister 可用于测试与内存存储。
+
+剩余 TODO（尚未实现）：
+
+未接入 PostgreSQL / Redis / RabbitMQ。
+未落地文件树全量同步、三副本真实存储/分片传输、最快节点测速与直连 TCP 传输。
+未实现 InstallSnapshot RPC 与复制模块实质逻辑（replication/coordinator.go, sync.go 为空）。
+下载/上传的实时进度回传与 Redis 队列化、RabbitMQ 消息流未接入。
+Leader 失联触发的业务层选举联动（发现层仅摘除节点）。
