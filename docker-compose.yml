@@ -1,4 +1,142 @@
+version: '3.8'
+
 services:
+  # Redis - 共享缓存服务
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    hostname: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - multi-driver-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # RabbitMQ - 共享消息队列服务
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"   # AMQP 端口
+      - "15672:15672" # 管理界面端口
+    networks:
+      - multi-driver-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL 数据库节点
+  postgres-0:
+    image: postgres:15-alpine
+    container_name: postgres-0
+    hostname: postgres-0
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgre
+      POSTGRES_DB: driver
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-0-data:/var/lib/postgresql/data
+    networks:
+      - multi-driver-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-1:
+    image: postgres:15-alpine
+    container_name: postgres-1
+    hostname: postgres-1
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgre
+      POSTGRES_DB: driver
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-1-data:/var/lib/postgresql/data
+    networks:
+      - multi-driver-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-2:
+    image: postgres:15-alpine
+    container_name: postgres-2
+    hostname: postgres-2
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgre
+      POSTGRES_DB: driver
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres-2-data:/var/lib/postgresql/data
+    networks:
+      - multi-driver-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-3:
+    image: postgres:15-alpine
+    container_name: postgres-3
+    hostname: postgres-3
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgre
+      POSTGRES_DB: driver
+    ports:
+      - "5435:5432"
+    volumes:
+      - postgres-3-data:/var/lib/postgresql/data
+    networks:
+      - multi-driver-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-4:
+    image: postgres:15-alpine
+    container_name: postgres-4
+    hostname: postgres-4
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgre
+      POSTGRES_DB: driver
+    ports:
+      - "5436:5432"
+    volumes:
+      - postgres-4-data:/var/lib/postgresql/data
+    networks:
+      - multi-driver-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 应用节点
   node-0:
     build:
       context: .
@@ -11,20 +149,22 @@ services:
       -me 0
       -peers node-1:29001,node-2:29001,node-3:29001,node-4:29001
       -health-port 9081
+      -db-dsn "host=postgres-0 port=5432 user=postgres password=postgre dbname=driver sslmode=disable"
+      -redis-addr redis:6379
+      -rabbitmq-url amqp://guest:guest@rabbitmq:5672/
     ports:
       - "29001:29001"
       - "9081:9081"
-    volumes:
-      - node0_data:/data
     networks:
-      - cluster-network
+      - multi-driver-network
+    depends_on:
+      postgres-0:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9081/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-      start_period: 10s
 
   node-1:
     build:
@@ -38,20 +178,22 @@ services:
       -me 1
       -peers node-0:29001,node-2:29001,node-3:29001,node-4:29001
       -health-port 9081
+      -db-dsn "host=postgres-1 port=5432 user=postgres password=postgre dbname=driver sslmode=disable"
+      -redis-addr redis:6379
+      -rabbitmq-url amqp://guest:guest@rabbitmq:5672/
     ports:
       - "29002:29001"
       - "9082:9081"
-    volumes:
-      - node1_data:/data
     networks:
-      - cluster-network
+      - multi-driver-network
+    depends_on:
+      postgres-1:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9081/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-      start_period: 10s
 
   node-2:
     build:
@@ -65,20 +207,22 @@ services:
       -me 2
       -peers node-0:29001,node-1:29001,node-3:29001,node-4:29001
       -health-port 9081
+      -db-dsn "host=postgres-2 port=5432 user=postgres password=postgre dbname=driver sslmode=disable"
+      -redis-addr redis:6379
+      -rabbitmq-url amqp://guest:guest@rabbitmq:5672/
     ports:
       - "29003:29001"
       - "9083:9081"
-    volumes:
-      - node2_data:/data
     networks:
-      - cluster-network
+      - multi-driver-network
+    depends_on:
+      postgres-2:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9081/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-      start_period: 10s
 
   node-3:
     build:
@@ -92,20 +236,22 @@ services:
       -me 3
       -peers node-0:29001,node-1:29001,node-2:29001,node-4:29001
       -health-port 9081
+      -db-dsn "host=postgres-3 port=5432 user=postgres password=postgre dbname=driver sslmode=disable"
+      -redis-addr redis:6379
+      -rabbitmq-url amqp://guest:guest@rabbitmq:5672/
     ports:
       - "29004:29001"
       - "9084:9081"
-    volumes:
-      - node3_data:/data
     networks:
-      - cluster-network
+      - multi-driver-network
+    depends_on:
+      postgres-3:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9081/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-      start_period: 10s
 
   node-4:
     build:
@@ -119,31 +265,30 @@ services:
       -me 4
       -peers node-0:29001,node-1:29001,node-2:29001,node-3:29001
       -health-port 9081
+      -db-dsn "host=postgres-4 port=5432 user=postgres password=postgre dbname=driver sslmode=disable"
+      -redis-addr redis:6379
+      -rabbitmq-url amqp://guest:guest@rabbitmq:5672/
     ports:
       - "29005:29001"
       - "9085:9081"
-    volumes:
-      - node4_data:/data
     networks:
-      - cluster-network
+      - multi-driver-network
+    depends_on:
+      postgres-4:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9081/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-      start_period: 10s
 
 networks:
-  cluster-network:
+  multi-driver-network:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.28.0.0/16
 
 volumes:
-  node0_data:
-  node1_data:
-  node2_data:
-  node3_data:
-  node4_data:
+  postgres-0-data:
+  postgres-1-data:
+  postgres-2-data:
+  postgres-3-data:
+  postgres-4-data:

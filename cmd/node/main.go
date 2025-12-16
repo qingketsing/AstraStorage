@@ -24,6 +24,12 @@ func main() {
 	peersStr := flag.String("peers", "", "comma-separated peer addresses (excluding self)")
 	me := flag.Int("me", 0, "this node index in cluster (for raft)")
 	healthPort := flag.Int("health-port", 8080, "HTTP health check port")
+	dbDSN := flag.String("db-dsn", "host=localhost port=5432 user=postgres password=postgre dbname=driver sslmode=disable", "PostgreSQL Data Source Name")
+
+	// Redis 和 RabbitMQ 配置（所有节点共享）
+	redisAddr := flag.String("redis-addr", "", "Redis address (only Leader connects)")
+	rabbitmqURL := flag.String("rabbitmq-url", "", "RabbitMQ URL (only Leader connects)")
+
 	flag.Parse()
 
 	// 解析 peers
@@ -40,13 +46,19 @@ func main() {
 
 	log.Printf("启动节点 %s, 地址 %s (me=%d)", *id, *addr, *me)
 	log.Printf("集群节点: %v", peerAddrs)
+	if *redisAddr != "" {
+		log.Printf("Redis 地址: %s (Leader 自动连接)", *redisAddr)
+	}
+	if *rabbitmqURL != "" {
+		log.Printf("RabbitMQ 地址: %s (Leader 自动连接)", *rabbitmqURL)
+	}
 
 	// 创建 applyCh 和 persister
 	applyCh := make(chan raft.ApplyMsg, 256)
 	persister := raft.NewInMemoryPersister()
 
 	// 启动节点
-	node, err := integration.NewNode(*id, *addr, *me, peerAddrs, persister, applyCh)
+	node, err := integration.NewNode(*id, *addr, *me, peerAddrs, persister, applyCh, *dbDSN, *redisAddr, *rabbitmqURL)
 	if err != nil {
 		log.Fatalf("启动节点失败: %v", err)
 	}

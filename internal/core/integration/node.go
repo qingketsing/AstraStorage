@@ -4,6 +4,8 @@ import (
 	"multi_driver/internal/core/cluster"
 	"multi_driver/internal/core/consensus"
 	"multi_driver/internal/core/consensus/raft"
+	"multi_driver/internal/db"
+	"multi_driver/internal/middleware"
 )
 
 // Node 表示一个完整的分布式节点，整合了 cluster 和 raft
@@ -19,6 +21,13 @@ type Node struct {
 	Raft        *raft.Raft
 	Coordinator *consensus.LeaderCoordinator
 
+	// Postgres Sql连接
+	DB *db.DBConnection
+
+	// 中间件管理器（自动监控 Leader 并管理连接）
+	RedisManager    *middleware.RedisManager
+	RabbitMQManager *middleware.RabbitMQManager
+
 	// RPC 通信
 	rpcServer *cluster.RaftRPCServer
 	peers     []raft.Peer
@@ -27,7 +36,7 @@ type Node struct {
 // NewNode 创建一个完整的节点
 // me: 当前节点在整个集群中的索引（0-based）
 // peerAddresses: 其他节点的地址列表（不包括自己）
-func NewNode(id, address string, me int, peerAddresses []string, persister raft.Persister, applyCh chan raft.ApplyMsg) (*Node, error) {
+func NewNode(id, address string, me int, peerAddresses []string, persister raft.Persister, applyCh chan raft.ApplyMsg, dbDSN string, redisAddr string, rabbitmqURL string) (*Node, error) {
 	node := &Node{
 		ID:      id,
 		Address: address,
@@ -58,9 +67,24 @@ func NewNode(id, address string, me int, peerAddresses []string, persister raft.
 	// 7. 初始化 Leader Coordinator
 	node.Coordinator = consensus.NewLeaderCoordinator(node.Raft, node.Membership)
 
-	// 8. 启动服务
+	// 8. PostgreSQL 连接
+	dbConn, err := db.NewDBConnection(dbDSN)
+	if err != nil {
+		return nil, err
+	}
+	node.DB = dbConn
+
+	// 9. 启动服务
 	if err := node.Discovery.Start(); err != nil {
 		return nil, err
+	}
+
+	// 10. 初始化中间件管理器（自动监控 Leader 并管理连接）
+	if redisAddr != "" {
+		node.RedisManager = middleware.NewRedisManager(id, redisAddr, node.Raft)
+	}
+	if rabbitmqURL != "" {
+		node.RabbitMQManager = middleware.NewRabbitMQManager(id, rabbitmqURL, node.Raft)
 	}
 
 	return node, nil
@@ -120,6 +144,15 @@ func (w *RaftRPCWrapper) AppendEntries(args *cluster.AppendEntriesArgs, reply *c
 func (node *Node) Stop() {
 	node.Discovery.Stop()
 	node.Raft.Kill()
+	if node.DB != nil {
+		node.DB.Close()
+	}
+	if node.RedisManager != nil {
+		node.RedisManager.Stop()
+	}
+	if node.RabbitMQManager != nil {
+		node.RabbitMQManager.Stop()
+	}
 }
 
 // IsLeader 检查当前节点是否为 Leader

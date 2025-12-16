@@ -37,6 +37,9 @@ func TestThreeNodeClusterLeaderElection(t *testing.T) {
 			peerAddrs,
 			persister,
 			applyCh,
+			"", // dbDSN - 测试中不需要数据库
+			"", // redisAddr
+			"", // rabbitmqURL
 		)
 		if err != nil {
 			t.Fatalf("Failed to create node %d: %v", i, err)
@@ -118,6 +121,9 @@ func TestRaftCommandReplication(t *testing.T) {
 			peerAddrs,
 			persister,
 			applyCh,
+			"", // dbDSN - 测试中不需要数据库
+			"", // redisAddr
+			"", // rabbitmqURL
 		)
 		if err != nil {
 			t.Fatalf("Failed to create node %d: %v", i, err)
@@ -224,6 +230,9 @@ func TestLeaderFailover(t *testing.T) {
 			peerAddrs,
 			persister,
 			applyCh,
+			"", // dbDSN - 测试中不需要数据库
+			"", // redisAddr
+			"", // rabbitmqURL
 		)
 		if err != nil {
 			t.Fatalf("Failed to create node %d: %v", i, err)
@@ -335,6 +344,9 @@ func TestFiveNodeCluster(t *testing.T) {
 			peerAddrs,
 			persister,
 			applyCh,
+			"", // dbDSN - 测试中不需要数据库
+			"", // redisAddr
+			"", // rabbitmqURL
 		)
 		if err != nil {
 			t.Fatalf("Failed to create node %d: %v", i, err)
