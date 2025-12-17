@@ -45,6 +45,7 @@ type Client struct {
 
 type UploadMetaDataArgs struct {
 	Operation string `json:"operation"` // "upload"
+	ClientIP  string `json:"client_ip"`
 	FileName  string `json:"file_name"`
 	FileSize  int64  `json:"file_size"`
 }
@@ -142,8 +143,14 @@ func (c *Client) SendFile(filePath string) error {
 		return fmt.Errorf("not a regular file: %s", filePath)
 	}
 
+	ip, err := getLocalIP()
+	if err != nil {
+		return fmt.Errorf("get local ip failed: %w", err)
+	}
+
 	req := UploadMetaDataArgs{
 		Operation: "upload_file",
+		ClientIP:  ip,
 		FileName:  filepath.Base(filePath),
 		FileSize:  info.Size(),
 	}
@@ -164,7 +171,7 @@ func (c *Client) SendFile(filePath string) error {
 	return uploadViaTCP(resp.UploadAddr, resp.Token, filePath)
 }
 
-// 通过 RabbitMQ 做一次简单 RPC，请求上传
+// 通过 RabbitMQ 做一次简单 RPC，请求上传，同时把自己本身的ip地址告诉leader，方便tcp_server.go监听
 func (c *Client) rpcUploadRequest(req UploadMetaDataArgs, timeout time.Duration) (*UploadMetaDataReply, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -201,7 +208,7 @@ func (c *Client) rpcUploadRequest(req UploadMetaDataArgs, timeout time.Duration)
 				continue
 			}
 			var resp UploadMetaDataReply
-			if err := json.Unmarshal(d.Body, &resp); err != nil {
+			if err := json.Unmarshal(d.Body, &resp); err != nil { // Unmarshal 反序列化失败
 				return nil, err
 			}
 			return &resp, nil
@@ -240,6 +247,8 @@ func (p *ProgressWriter) Write(b []byte) (int, error) {
 // 和 leader 建立 TCP 连接，分片发送 token + 文件内容，并显示进度
 func uploadViaTCP(addr, token, filePath string) error {
 	conn, err := net.Dial("tcp", addr)
+	// 对应的tcp_server.go中应该有监听代码
+	// 函数名为StartTCPUploadServer
 	if err != nil {
 		return fmt.Errorf("dial leader tcp(%s) failed: %w", addr, err)
 	}
@@ -260,7 +269,6 @@ func uploadViaTCP(addr, token, filePath string) error {
 	if _, err := conn.Write([]byte(token + "\n")); err != nil {
 		return fmt.Errorf("write token failed: %w", err)
 	}
-
 	pw := &ProgressWriter{
 		w:     conn,
 		total: info.Size(),
@@ -269,8 +277,18 @@ func uploadViaTCP(addr, token, filePath string) error {
 	if _, err := io.CopyBuffer(pw, f, buf); err != nil {
 		return fmt.Errorf("send file data failed: %w", err)
 	}
-
 	return nil
+}
+
+func getLocalIP() (string, error) {
+	// 建一个 UDP 伪连接，只是为了拿到本机出网 IP
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
+	addr := conn.LocalAddr().(*net.UDPAddr)
+	return addr.IP.String(), nil
 }
 
 func main() {

@@ -38,6 +38,11 @@ func (r *RabbitMQ) Close() error {
 	return nil
 }
 
+// Channel 返回底层的 AMQP Channel，供高级用法（如 RPC / 自定义消费）使用
+func (r *RabbitMQ) Channel() *amqp.Channel {
+	return r.channel
+}
+
 // Publish 发布消息到队列
 func (r *RabbitMQ) Publish(queueName string, message []byte) error {
 	// 声明队列
