@@ -15,6 +15,7 @@ import (
 
 	"multi_driver/internal/core/consensus/raft"
 	"multi_driver/internal/core/integration"
+	"multi_driver/internal/storage/upload"
 )
 
 func main() {
@@ -24,6 +25,7 @@ func main() {
 	peersStr := flag.String("peers", "", "comma-separated peer addresses (excluding self)")
 	me := flag.Int("me", 0, "this node index in cluster (for raft)")
 	healthPort := flag.Int("health-port", 8080, "HTTP health check port")
+	uploadPort := flag.Int("upload-port", 0, "TCP upload server port (0 for auto-assign)")
 	dbDSN := flag.String("db-dsn", "host=localhost port=5432 user=postgres password=postgre dbname=driver sslmode=disable", "PostgreSQL Data Source Name")
 
 	// Redis 和 RabbitMQ 配置（所有节点共享）
@@ -71,6 +73,11 @@ func main() {
 					*id, msg.CommandIndex, msg.Command)
 			}
 		}
+	}()
+
+	// 启动文件上传服务（Leader-aware，只有 Leader 才会实际监听队列）
+	go func() {
+		upload.RunLeaderAwareUploadService(node, "file.upload", "", *uploadPort, 5*time.Minute)
 	}()
 
 	// 启动健康检查 HTTP 服务器

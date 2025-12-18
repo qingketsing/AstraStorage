@@ -1,9 +1,13 @@
 package integration
 
 import (
+	"strings"
+	"time"
+
 	"multi_driver/internal/core/cluster"
 	"multi_driver/internal/core/consensus"
 	"multi_driver/internal/core/consensus/raft"
+	"multi_driver/internal/core/replication"
 	"multi_driver/internal/db"
 	"multi_driver/internal/middleware"
 )
@@ -23,6 +27,9 @@ type Node struct {
 
 	// Postgres Sql连接
 	DB *db.DBConnection
+
+	// 文件复制管理器
+	ReplicationMgr *replication.ReplicationManager
 
 	// 中间件管理器（自动监控 Leader 并管理连接）
 	RedisManager    *middleware.RedisManager
@@ -74,12 +81,41 @@ func NewNode(id, address string, me int, peerAddresses []string, persister raft.
 	}
 	node.DB = dbConn
 
-	// 9. 启动服务
+	// 9. 初始化文件复制管理器（传入数据库连接）
+	node.ReplicationMgr = replication.NewReplicationManager(id, node.Membership, dbConn, "FileStorage")
+	// 启动复制接收服务
+	if err := node.ReplicationMgr.StartReplicationServer("19001"); err != nil {
+		return nil, err
+	}
+
+	// 10. 启动服务
 	if err := node.Discovery.Start(); err != nil {
 		return nil, err
 	}
 
-	// 10. 初始化中间件管理器（自动监控 Leader 并管理连接）
+	// 10.5. 初始化已知的peer节点到Membership中（预先添加节点信息，避免等待心跳发现）
+	// 从peerAddresses提取节点ID并添加到Membership
+	for _, addr := range peerAddresses {
+		// 假设peerAddresses格式为"node-X:port"，从地址中提取节点ID
+		// 例如: "node-0:29001" → "node-0"
+		var peerID string
+		if idx := strings.Index(addr, ":"); idx > 0 {
+			peerID = addr[:idx]
+		} else {
+			peerID = addr // 如果没有端口，整个地址就是ID
+		}
+
+		// 创建初始节点信息并添加到Discovery
+		peerNode := &cluster.Node{
+			ID:       peerID,
+			Address:  addr,
+			Status:   "alive", // 假设初始状态为alive
+			LastSeen: time.Now(),
+		}
+		node.Discovery.AddInitialNode(peerNode)
+	}
+
+	// 11. 初始化中间件管理器（自动监控 Leader 并管理连接）
 	if redisAddr != "" {
 		node.RedisManager = middleware.NewRedisManager(id, redisAddr, node.Raft)
 	}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 // UploadMetaDataArgs 与客户端约定的上传元数据请求结构保持一致
 type UploadMetaDataArgs struct {
 	Operation string `json:"operation"`
+	ClientIP  string `json:"client_ip"`
 	FileName  string `json:"file_name"`
 	FileSize  int64  `json:"file_size"`
 }
@@ -84,8 +86,9 @@ func LookupUploadSession(token string) (UploadSession, bool) {
 // RunLeaderAwareUploadService 在节点成为 Leader 时消费上传元数据请求，并返回上传地址和 token
 // queueName: 用于客户端发送 UploadMetaDataArgs 的队列名称，例如 "file.upload"
 // listenIP: 当前节点对外暴露的 TCP 上传 IP，例如 "10.0.0.5"
+// uploadPort: TCP 上传端口（0 表示自动分配）
 // tokenTTL: 上传令牌的有效期
-func RunLeaderAwareUploadService(node *integration.Node, queueName, listenIP string, tokenTTL time.Duration) {
+func RunLeaderAwareUploadService(node *integration.Node, queueName, listenIP string, uploadPort int, tokenTTL time.Duration) {
 	for {
 		// 仅在当前节点是 Leader 且 RabbitMQ 连接就绪时提供服务
 		if !node.IsLeader() || node.RabbitMQManager == nil {
@@ -135,11 +138,11 @@ func RunLeaderAwareUploadService(node *integration.Node, queueName, listenIP str
 			continue
 		}
 
-		log.Printf("[%s] upload metadata service started as leader, queue=%s, listenIP=%s", node.ID, queueName, listenIP)
+		log.Printf("[%s] upload metadata service started as leader, queue=%s, listenIP=%s, uploadPort=%d", node.ID, queueName, listenIP, uploadPort)
 
 		// 当连接关闭或失去 Leader 身份时，RabbitMQManager 会断开连接，msgs 也会被关闭
 		for d := range msgs {
-			handleUploadMetaMessage(node, ch, &d, listenIP, tokenTTL)
+			handleUploadMetaMessage(node, ch, &d, listenIP, uploadPort, tokenTTL)
 		}
 
 		log.Printf("[%s] upload metadata service stopped (likely lost leader or connection closed)", node.ID)
@@ -148,7 +151,7 @@ func RunLeaderAwareUploadService(node *integration.Node, queueName, listenIP str
 	}
 }
 
-func handleUploadMetaMessage(node *integration.Node, ch *amqp.Channel, d *amqp.Delivery, listenIP string, tokenTTL time.Duration) {
+func handleUploadMetaMessage(node *integration.Node, ch *amqp.Channel, d *amqp.Delivery, listenIP string, uploadPort int, tokenTTL time.Duration) {
 	defer func() {
 		// 无论成功或失败，都 ack 掉，避免重复消费；如果需要重试可根据业务调整
 		if err := d.Ack(false); err != nil {
@@ -194,11 +197,34 @@ func handleUploadMetaMessage(node *integration.Node, ch *amqp.Channel, d *amqp.D
 		}
 	}
 
-	uploadAddr, err := StartTCPUploadServer(listenIP, token)
+	ctx := &UploadContext{
+		NodeID: node.ID,
+		DB:     node.DB,
+	}
+	// 如果节点有ReplicationManager，传入以便执行复制
+	if node.ReplicationMgr != nil {
+		ctx.ReplicationMgr = node.ReplicationMgr
+	}
+
+	uploadAddr, err := StartTCPUploadServer(listenIP, uploadPort, token, ctx)
 	if err != nil {
 		log.Printf("[%s] start TCP upload server failed: %v", node.ID, err)
 		replyUploadError(ch, d, "start tcp upload server failed: "+err.Error())
 		return
+	}
+
+	// 如果客户端IP是外部地址（非Docker内部），将上传地址中的IP替换为localhost
+	// 这样测试可以从宿主机连接到容器
+	clientIP := args.ClientIP
+	// Docker内部IP通常是172.x.x.x，客户端如果不是这个范围，说明是外部连接
+	if clientIP != "" && !strings.HasPrefix(clientIP, "172.") && !strings.HasPrefix(clientIP, "192.168.") {
+		// 客户端是外部地址，将 Docker 内部 IP 替换为 localhost
+		if host, port, err := net.SplitHostPort(uploadAddr); err == nil {
+			if strings.HasPrefix(host, "172.") || strings.HasPrefix(host, "192.168.") {
+				uploadAddr = "localhost:" + port
+				log.Printf("[%s] external client detected, converted upload address to: %s", node.ID, uploadAddr)
+			}
+		}
 	}
 
 	resp := UploadMetaDataReply{

@@ -42,10 +42,10 @@ services:
     hostname: postgres-0
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgre
       POSTGRES_DB: driver
+      POSTGRES_HOST_AUTH_METHOD: trust
     ports:
-      - "5432:5432"
+      - "20000:5432"
     volumes:
       - postgres-0-data:/var/lib/postgresql/data
     networks:
@@ -62,10 +62,10 @@ services:
     hostname: postgres-1
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgre
       POSTGRES_DB: driver
+      POSTGRES_HOST_AUTH_METHOD: trust
     ports:
-      - "5433:5432"
+      - "20001:5432"
     volumes:
       - postgres-1-data:/var/lib/postgresql/data
     networks:
@@ -82,10 +82,10 @@ services:
     hostname: postgres-2
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgre
       POSTGRES_DB: driver
+      POSTGRES_HOST_AUTH_METHOD: trust
     ports:
-      - "5434:5432"
+      - "20002:5432"
     volumes:
       - postgres-2-data:/var/lib/postgresql/data
     networks:
@@ -102,10 +102,10 @@ services:
     hostname: postgres-3
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgre
       POSTGRES_DB: driver
+      POSTGRES_HOST_AUTH_METHOD: trust
     ports:
-      - "5435:5432"
+      - "20003:5432"
     volumes:
       - postgres-3-data:/var/lib/postgresql/data
     networks:
@@ -122,10 +122,10 @@ services:
     hostname: postgres-4
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgre
       POSTGRES_DB: driver
+      POSTGRES_HOST_AUTH_METHOD: trust
     ports:
-      - "5436:5432"
+      - "20004:5432"
     volumes:
       - postgres-4-data:/var/lib/postgresql/data
     networks:
@@ -149,12 +149,14 @@ services:
       -me 0
       -peers node-1:29001,node-2:29001,node-3:29001,node-4:29001
       -health-port 9081
+      -upload-port 30001
       -db-dsn "host=postgres-0 port=5432 user=postgres password=postgre dbname=driver sslmode=disable"
       -redis-addr redis:6379
       -rabbitmq-url amqp://guest:guest@rabbitmq:5672/
     ports:
       - "29001:29001"
       - "9081:9081"
+      - "30001:30001"
     networks:
       - multi-driver-network
     depends_on:
@@ -178,12 +180,14 @@ services:
       -me 1
       -peers node-0:29001,node-2:29001,node-3:29001,node-4:29001
       -health-port 9081
+      -upload-port 30002
       -db-dsn "host=postgres-1 port=5432 user=postgres password=postgre dbname=driver sslmode=disable"
       -redis-addr redis:6379
       -rabbitmq-url amqp://guest:guest@rabbitmq:5672/
     ports:
       - "29002:29001"
       - "9082:9081"
+      - "30002:30002"
     networks:
       - multi-driver-network
     depends_on:
@@ -207,12 +211,14 @@ services:
       -me 2
       -peers node-0:29001,node-1:29001,node-3:29001,node-4:29001
       -health-port 9081
+      -upload-port 30003
       -db-dsn "host=postgres-2 port=5432 user=postgres password=postgre dbname=driver sslmode=disable"
       -redis-addr redis:6379
       -rabbitmq-url amqp://guest:guest@rabbitmq:5672/
     ports:
       - "29003:29001"
       - "9083:9081"
+      - "30003:30003"
     networks:
       - multi-driver-network
     depends_on:
@@ -236,12 +242,14 @@ services:
       -me 3
       -peers node-0:29001,node-1:29001,node-2:29001,node-4:29001
       -health-port 9081
+      -upload-port 30004
       -db-dsn "host=postgres-3 port=5432 user=postgres password=postgre dbname=driver sslmode=disable"
       -redis-addr redis:6379
       -rabbitmq-url amqp://guest:guest@rabbitmq:5672/
     ports:
       - "29004:29001"
       - "9084:9081"
+      - "30004:30004"
     networks:
       - multi-driver-network
     depends_on:
@@ -265,12 +273,14 @@ services:
       -me 4
       -peers node-0:29001,node-1:29001,node-2:29001,node-3:29001
       -health-port 9081
+      -upload-port 30005
       -db-dsn "host=postgres-4 port=5432 user=postgres password=postgre dbname=driver sslmode=disable"
       -redis-addr redis:6379
       -rabbitmq-url amqp://guest:guest@rabbitmq:5672/
     ports:
       - "29005:29001"
       - "9085:9081"
+      - "30005:30005"
     networks:
       - multi-driver-network
     depends_on:

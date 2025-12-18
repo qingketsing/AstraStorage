@@ -133,6 +133,25 @@ func (dm *DiscoveryManager) Stop() {
 	close(dm.stopCh)
 }
 
+// AddInitialNode 添加初始节点信息（用于启动时预先添加已知节点）
+func (dm *DiscoveryManager) AddInitialNode(node *Node) {
+	dm.mu.Lock()
+	defer dm.mu.Unlock()
+
+	// 添加到nodes map
+	dm.nodes[node.ID] = node
+
+	// 通知Membership Manager
+	select {
+	case dm.joinedCh <- node:
+	default:
+		// 如果channel满了，记录日志但不阻塞
+		log.Printf("[%s] Warning: joinedCh full when adding initial node %s", dm.selfID, node.ID)
+	}
+
+	log.Printf("[%s] Added initial peer node: %s at %s", dm.selfID, node.ID, node.Address)
+}
+
 // startHTTPServer 启动 HTTP 服务器处理节点请求
 func (dm *DiscoveryManager) startHTTPServer() {
 	mux := http.NewServeMux()
