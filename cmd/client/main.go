@@ -57,6 +57,21 @@ type UploadMetaDataReply struct {
 	Token      string `json:"token"`       // 用于上传文件的令牌
 }
 
+type QueryMetaDataArgs struct {
+	Operation string `json:"operation"` // "query"
+	FileName  string `json:"file_name"`
+}
+
+type QueryMetaDataReply struct {
+	OK              bool   `json:"ok"`
+	Err             string `json:"err,omitempty"`
+	FileName        string `json:"file_name"`
+	FileSize        int64  `json:"file_size"`
+	CreatedAt       string `json:"created_at"`
+	FileStorageAddr string `json:"file_addr"` // 文件存储节点地址列表，逗号分隔
+	FileTree        string `json:"file_tree"` // 文件目录树路径，例如 "1-2-3"
+}
+
 func NewClient(rabbitmqURL string, requestQueueName string) (*Client, error) {
 	// 1. 连接到 RabbitMQ 服务器
 	conn, err := ampq.Dial(rabbitmqURL)

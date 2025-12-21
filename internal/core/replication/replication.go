@@ -108,6 +108,95 @@ func (rm *ReplicationManager) ReplicateFile(localPath, fileName string, fileSize
 	return successNodes, nil
 }
 
+// BroadcastMetadata 向所有其他节点广播文件元数据（不传输文件内容）
+// storageNodes 是实际存储文件的节点列表
+// 这样所有节点的数据库都会有文件记录，即使它们不存储实际文件
+func (rm *ReplicationManager) BroadcastMetadata(fileName string, fileSize int64, storageNodes []string, ownerID string) error {
+	// 获取所有节点（包括自己）
+	allNodes := rm.membership.GetAllNodes()
+
+	if len(allNodes) == 0 {
+		log.Printf("[%s] no nodes available for metadata broadcast", rm.nodeID)
+		return nil
+	}
+
+	storageNodesStr := strings.Join(storageNodes, ",")
+
+	// 向所有节点（除了自己和已存储文件的节点）发送元数据
+	successCount := 0
+	for _, node := range allNodes {
+		if node.ID == rm.nodeID {
+			continue // 跳过自己，自己已经保存过了
+		}
+
+		// 跳过已经通过文件复制获得元数据的节点
+		isStorageNode := false
+		for _, sn := range storageNodes {
+			if sn == node.ID {
+				isStorageNode = true
+				break
+			}
+		}
+		if isStorageNode {
+			continue
+		}
+
+		log.Printf("[%s] broadcasting metadata to node %s (%s)", rm.nodeID, node.ID, node.Address)
+
+		err := rm.sendMetadataToNode(node, fileName, fileSize, storageNodesStr, ownerID)
+		if err != nil {
+			log.Printf("[%s] broadcast metadata to node %s failed: %v", rm.nodeID, node.ID, err)
+			continue
+		}
+
+		successCount++
+		log.Printf("[%s] successfully broadcast metadata to node %s", rm.nodeID, node.ID)
+	}
+
+	log.Printf("[%s] metadata broadcast completed: %d/%d nodes", rm.nodeID, successCount, len(allNodes)-len(storageNodes)-1)
+	return nil
+}
+
+// sendMetadataToNode 向指定节点发送文件元数据（不包含文件内容）
+func (rm *ReplicationManager) sendMetadataToNode(node *cluster.Node, fileName string, fileSize int64, storageNodes string, ownerID string) error {
+	// 解析节点地址
+	host, _, err := net.SplitHostPort(node.Address)
+	if err != nil {
+		return fmt.Errorf("invalid node address: %w", err)
+	}
+
+	// 连接到节点的元数据服务端口（使用不同的端口避免与文件复制冲突）
+	metadataAddr := net.JoinHostPort(host, "19002") // 元数据服务端口
+
+	conn, err := net.DialTimeout("tcp", metadataAddr, 5*time.Second)
+	if err != nil {
+		return fmt.Errorf("dial node failed: %w", err)
+	}
+	defer conn.Close()
+
+	// 设置超时
+	conn.SetDeadline(time.Now().Add(10 * time.Second))
+
+	// 发送元数据协议头：命令\n文件名\n文件大小\n存储节点列表\n所有者ID\n
+	header := fmt.Sprintf("METADATA\n%s\n%d\n%s\n%s\n", fileName, fileSize, storageNodes, ownerID)
+	if _, err := conn.Write([]byte(header)); err != nil {
+		return fmt.Errorf("send metadata header failed: %w", err)
+	}
+
+	// 等待对方确认
+	response := make([]byte, 3)
+	n, err := conn.Read(response)
+	if err != nil {
+		return fmt.Errorf("read response failed: %w", err)
+	}
+
+	if n != 2 || string(response[:2]) != "OK" {
+		return fmt.Errorf("node returned error: %s", string(response[:n]))
+	}
+
+	return nil
+}
+
 // selectTargetNodes 选择复制目标节点
 func (rm *ReplicationManager) selectTargetNodes() ([]*cluster.Node, error) {
 	// 需要复制的节点数量（不包括自己）
@@ -237,6 +326,100 @@ func (rm *ReplicationManager) StartReplicationServer(listenPort string) error {
 	}()
 
 	return nil
+}
+
+// StartMetadataServer 启动元数据接收服务
+func (rm *ReplicationManager) StartMetadataServer(listenPort string) error {
+	if listenPort == "" {
+		listenPort = "19002" // 默认端口
+	}
+
+	listener, err := net.Listen("tcp", ":"+listenPort)
+	if err != nil {
+		return fmt.Errorf("start metadata server failed: %w", err)
+	}
+
+	log.Printf("[%s] metadata server started on port %s", rm.nodeID, listenPort)
+
+	go func() {
+		defer listener.Close()
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				log.Printf("[%s] accept metadata connection failed: %v", rm.nodeID, err)
+				continue
+			}
+			go rm.handleMetadataConnection(conn)
+		}
+	}()
+
+	return nil
+}
+
+// handleMetadataConnection 处理元数据接收连接
+func (rm *ReplicationManager) handleMetadataConnection(conn net.Conn) {
+	defer conn.Close()
+
+	// 设置超时
+	conn.SetDeadline(time.Now().Add(10 * time.Second))
+
+	// 读取协议头：命令\n文件名\n文件大小\n存储节点列表\n所有者ID\n
+	header := make([]byte, 1024)
+	n, err := conn.Read(header)
+	if err != nil {
+		log.Printf("[%s] read metadata header failed: %v", rm.nodeID, err)
+		conn.Write([]byte("ER"))
+		return
+	}
+
+	lines := strings.Split(string(header[:n]), "\n")
+	if len(lines) < 5 || lines[0] != "METADATA" {
+		log.Printf("[%s] invalid metadata header", rm.nodeID)
+		conn.Write([]byte("ER"))
+		return
+	}
+
+	fileName := lines[1]
+	var fileSize int64
+	fmt.Sscanf(lines[2], "%d", &fileSize)
+	storageNodes := lines[3]
+	ownerID := lines[4]
+
+	log.Printf("[%s] receiving file metadata: %s, size=%d, storage_nodes=%s, owner=%s",
+		rm.nodeID, fileName, fileSize, storageNodes, ownerID)
+
+	// 保存元数据到数据库（注意：本地没有文件，所以 local_path 为空）
+	if rm.db != nil {
+		err = rm.saveMetadataToDatabase(fileName, fileSize, storageNodes, ownerID)
+		if err != nil {
+			log.Printf("[%s] save metadata to database failed: %v", rm.nodeID, err)
+			conn.Write([]byte("ER"))
+			return
+		}
+		log.Printf("[%s] metadata saved to database: name=%s, size=%d", rm.nodeID, fileName, fileSize)
+	}
+
+	conn.Write([]byte("OK"))
+}
+
+// saveMetadataToDatabase 保存元数据到本地数据库（不包含本地文件路径）
+func (rm *ReplicationManager) saveMetadataToDatabase(fileName string, fileSize int64, storageNodes string, ownerID string) error {
+	if rm.db == nil {
+		return fmt.Errorf("database connection is nil")
+	}
+
+	// 创建文件记录，local_path 为空表示本节点没有存储文件
+	fileInfo := db.FileUploadInfo{
+		FileName:     fileName,
+		FileSize:     fileSize,
+		LocalPath:    "", // 空字符串表示本节点没有存储文件
+		StorageNodes: storageNodes,
+		CreatedAt:    time.Now(),
+		OwnerID:      ownerID,
+	}
+
+	_, err := rm.db.SaveFileUpload(fileInfo)
+	return err
 }
 
 // handleReplicationConnection 处理复制连接

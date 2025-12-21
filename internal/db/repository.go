@@ -11,7 +11,7 @@ import (
 type FileUploadInfo struct {
 	FileName     string    // 文件名
 	FileSize     int64     // 文件大小（字节）
-	LocalPath    string    // 本地存储路径
+	LocalPath    string    // 本地存储路径（为空表示本节点没有存储文件，仅有元数据）
 	StorageNodes string    // 存储节点ID列表（逗号分隔）
 	StorageAdd   string    // 文件目录树路径（格式: "1-2-3"）
 	OwnerID      string    // 文件所有者ID（可选）
@@ -20,9 +20,18 @@ type FileUploadInfo struct {
 
 // SaveFileUpload 保存文件上传信息到数据库
 // 返回文件ID（数据库自增主键）
+// 注意：local_path 可以为空，表示本节点只有元数据，不存储实际文件
 func (dbc *DBConnection) SaveFileUpload(info FileUploadInfo) (int64, error) {
 	if info.CreatedAt.IsZero() {
 		info.CreatedAt = time.Now()
+	}
+
+	// 如果 local_path 为空，使用 NULL
+	var localPath interface{}
+	if info.LocalPath == "" {
+		localPath = nil
+	} else {
+		localPath = info.LocalPath
 	}
 
 	query := `
@@ -36,7 +45,7 @@ func (dbc *DBConnection) SaveFileUpload(info FileUploadInfo) (int64, error) {
 		query,
 		info.FileName,
 		info.FileSize,
-		info.LocalPath,
+		localPath,
 		info.StorageNodes,
 		info.StorageAdd,
 		info.OwnerID,
@@ -93,11 +102,12 @@ func (dbc *DBConnection) GetFileByID(fileID int64) (*FileInfo, error) {
 		WHERE id = $1
 	`
 	var info FileInfo
+	var localPath *string
 	err := dbc.db.QueryRow(query, fileID).Scan(
 		&info.ID,
 		&info.FileName,
 		&info.FileSize,
-		&info.LocalPath,
+		&localPath,
 		&info.StorageNodes,
 		&info.StorageAdd,
 		&info.OwnerID,
@@ -105,6 +115,9 @@ func (dbc *DBConnection) GetFileByID(fileID int64) (*FileInfo, error) {
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get file by id failed: %w", err)
+	}
+	if localPath != nil {
+		info.LocalPath = *localPath
 	}
 	return &info, nil
 }
@@ -280,4 +293,123 @@ func (dbc *DBConnection) DeleteNode(nodeID int64) error {
 		return fmt.Errorf("delete node failed: %w", err)
 	}
 	return nil
+}
+
+// === 元数据管理辅助方法 ===
+
+// GetFileByName 根据文件名获取文件信息
+func (dbc *DBConnection) GetFileByName(fileName string) (*FileInfo, error) {
+	query := `
+		SELECT id, file_name, file_size, local_path, storage_nodes, storage_add, owner_id, created_at
+		FROM files
+		WHERE file_name = $1
+		ORDER BY created_at DESC
+		LIMIT 1
+	`
+	var info FileInfo
+	var localPath *string
+	err := dbc.db.QueryRow(query, fileName).Scan(
+		&info.ID,
+		&info.FileName,
+		&info.FileSize,
+		&localPath,
+		&info.StorageNodes,
+		&info.StorageAdd,
+		&info.OwnerID,
+		&info.CreatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get file by name failed: %w", err)
+	}
+	if localPath != nil {
+		info.LocalPath = *localPath
+	}
+	return &info, nil
+}
+
+// HasFileLocally 检查本节点是否存储了指定文件
+func (dbc *DBConnection) HasFileLocally(fileID int64) (bool, string, error) {
+	query := `SELECT local_path FROM files WHERE id = $1`
+	var localPath *string
+	err := dbc.db.QueryRow(query, fileID).Scan(&localPath)
+	if err != nil {
+		return false, "", fmt.Errorf("query file failed: %w", err)
+	}
+	if localPath != nil && *localPath != "" {
+		return true, *localPath, nil
+	}
+	return false, "", nil
+}
+
+// ListAllFiles 列出所有文件（包括只有元数据的）
+func (dbc *DBConnection) ListAllFiles() ([]*FileInfo, error) {
+	query := `
+		SELECT id, file_name, file_size, local_path, storage_nodes, storage_add, owner_id, created_at
+		FROM files
+		ORDER BY created_at DESC
+	`
+	rows, err := dbc.db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("query files failed: %w", err)
+	}
+	defer rows.Close()
+
+	var files []*FileInfo
+	for rows.Next() {
+		var info FileInfo
+		var localPath *string
+		err := rows.Scan(
+			&info.ID,
+			&info.FileName,
+			&info.FileSize,
+			&localPath,
+			&info.StorageNodes,
+			&info.StorageAdd,
+			&info.OwnerID,
+			&info.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan file row failed: %w", err)
+		}
+		if localPath != nil {
+			info.LocalPath = *localPath
+		}
+		files = append(files, &info)
+	}
+	return files, nil
+}
+
+// ListFilesWithLocalStorage 列出本节点实际存储的文件
+func (dbc *DBConnection) ListFilesWithLocalStorage() ([]*FileInfo, error) {
+	query := `
+		SELECT id, file_name, file_size, local_path, storage_nodes, storage_add, owner_id, created_at
+		FROM files
+		WHERE local_path IS NOT NULL AND local_path != ''
+		ORDER BY created_at DESC
+	`
+	rows, err := dbc.db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("query files failed: %w", err)
+	}
+	defer rows.Close()
+
+	var files []*FileInfo
+	for rows.Next() {
+		var info FileInfo
+		err := rows.Scan(
+			&info.ID,
+			&info.FileName,
+			&info.FileSize,
+			&info.LocalPath,
+			&info.StorageNodes,
+			&info.StorageAdd,
+			&info.OwnerID,
+			&info.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan file row failed: %w", err)
+		}
+		files = append(files, &info)
+	}
+	return files, nil
 }

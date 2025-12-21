@@ -36,3 +36,8 @@ func (dbc *DBConnection) Close() error {
 	}
 	return nil
 }
+
+// GetDB 返回底层的sql.DB对象，供测试使用
+func (dbc *DBConnection) GetDB() *sql.DB {
+	return dbc.db
+}

@@ -133,6 +133,14 @@ func handleSingleUpload(conn net.Conn, expectedToken string, ctx *UploadContext)
 				} else {
 					log.Printf("[%s] updated storage_nodes in database: %s", ctx.NodeID, storageNodesStr)
 				}
+
+				// 向所有其他节点广播元数据（包括那些不存储文件的节点）
+				log.Printf("[%s] broadcasting file metadata to all nodes", ctx.NodeID)
+				if err := ctx.ReplicationMgr.BroadcastMetadata(sess.FileName, written, successNodes, sess.ClientIP); err != nil {
+					log.Printf("[%s] metadata broadcast failed: %v", ctx.NodeID, err)
+				} else {
+					log.Printf("[%s] metadata broadcast completed", ctx.NodeID)
+				}
 			}
 		}
 	} else {

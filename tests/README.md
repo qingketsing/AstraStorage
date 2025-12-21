@@ -7,6 +7,38 @@
 - ✅ 自动复制到其他节点
 - ✅ 数据库记录存储节点列表
 - ✅ 文件内容完整性验证
+- ✅ **元数据广播到所有节点**（新增）
+
+---
+
+## 测试文件
+
+### 1. file_upload_test.go
+完整的文件上传集成测试
+
+### 2. metadata_broadcast_test.go（新增）
+元数据广播功能测试
+
+**测试内容：**
+- 启动多节点集群
+- 上传文件到Leader节点
+- 文件复制到存储节点
+- 元数据广播到所有节点
+- 验证所有节点都有元数据
+- 验证存储节点有local_path，非存储节点local_path为空
+- 测试查询功能
+
+**运行测试：**
+```bash
+# 运行元数据广播测试
+go test -v ./tests -run TestMetadataBroadcast
+
+# 运行多文件测试
+go test -v ./tests -run TestMetadataBroadcastWithMultipleFiles
+
+# 运行所有元数据相关测试
+go test -v ./tests -run Metadata
+```
 
 ---
 

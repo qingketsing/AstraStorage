@@ -170,7 +170,7 @@ func initDatabaseSchema(t *testing.T) error {
 				id BIGSERIAL PRIMARY KEY,
 				file_name VARCHAR(255) NOT NULL,
 				file_size BIGINT NOT NULL,
-				local_path VARCHAR(500) NOT NULL,
+				local_path VARCHAR(500),
 				storage_nodes TEXT,
 				storage_add VARCHAR(500),
 				owner_id VARCHAR(100),
