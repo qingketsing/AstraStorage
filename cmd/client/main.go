@@ -19,6 +19,9 @@ import (
 
 	"github.com/google/uuid"
 	ampq "github.com/rabbitmq/amqp091-go"
+
+	query "multi_driver/internal/storage/query"
+	upload "multi_driver/internal/storage/upload"
 )
 
 const chunkSize = 1 << 20 // 1MB
@@ -41,35 +44,6 @@ type Client struct {
 	RequestQueue ampq.Queue           // 用于发送请求的队列
 	ReplyQueue   ampq.Queue           // 用于接收回复的临时队列
 	Replies      <-chan ampq.Delivery // 用于接收回复消息
-}
-
-type UploadMetaDataArgs struct {
-	Operation string `json:"operation"` // "upload"
-	ClientIP  string `json:"client_ip"`
-	FileName  string `json:"file_name"`
-	FileSize  int64  `json:"file_size"`
-}
-
-type UploadMetaDataReply struct {
-	OK         bool   `json:"ok"`
-	Err        string `json:"err,omitempty"`
-	UploadAddr string `json:"upload_addr"` // 例如 "127.0.0.1:29001"
-	Token      string `json:"token"`       // 用于上传文件的令牌
-}
-
-type QueryMetaDataArgs struct {
-	Operation string `json:"operation"` // "query"
-	FileName  string `json:"file_name"`
-}
-
-type QueryMetaDataReply struct {
-	OK              bool   `json:"ok"`
-	Err             string `json:"err,omitempty"`
-	FileName        string `json:"file_name"`
-	FileSize        int64  `json:"file_size"`
-	CreatedAt       string `json:"created_at"`
-	FileStorageAddr string `json:"file_addr"` // 文件存储节点地址列表，逗号分隔
-	FileTree        string `json:"file_tree"` // 文件目录树路径，例如 "1-2-3"
 }
 
 func NewClient(rabbitmqURL string, requestQueueName string) (*Client, error) {
@@ -148,6 +122,62 @@ func (c *Client) Close() {
 	}
 }
 
+// QueryDataFromLeader 向 leader 查询文件元数据
+func QueryDataFromLeader(client *Client, fileName string) (*query.QueryMetaDataReply, error) {
+	args := query.QueryMetaDataArgs{
+		Operation: "query",
+		FileName:  fileName,
+	}
+	// 通过 RabbitMQ 做一次简单 RPC，请求查询元数据
+	// 类似于 rpcUploadRequest
+	return rpcQueryRequest(client, args, 5*time.Second)
+}
+
+// 通过 RabbitMQ 做一次简单 RPC，请求查询元数据
+func rpcQueryRequest(client *Client, req query.QueryMetaDataArgs, timeout time.Duration) (*query.QueryMetaDataReply, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	corrID := uuid.NewString()
+
+	err = client.Ch.Publish(
+		"",                       // 默认 exchange，直接路由到队列
+		client.RequestQueue.Name, // 请求队列名
+		false,
+		false,
+		ampq.Publishing{
+			ContentType:   "application/json",
+			Body:          body,
+			ReplyTo:       client.ReplyQueue.Name,
+			CorrelationId: corrID,
+			Type:          "query",
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	for { // 等待响应
+		select {
+		case d := <-client.Replies: // 收到响应
+			if d.CorrelationId != corrID {
+				// 不是这次请求的响应，丢弃或根据需要缓存
+				continue
+			}
+			var resp query.QueryMetaDataReply                     // 响应结构体
+			if err := json.Unmarshal(d.Body, &resp); err != nil { // Unmarshal 反序列化失败
+				return nil, err
+			}
+			return &resp, nil
+		case <-timer.C:
+			return nil, fmt.Errorf("wait query response timeout")
+		}
+	}
+}
+
 // SendFile：1）通过 RabbitMQ 发“我要上传文件”的请求；2）收到 leader 返回的 TCP 地址后直连传文件
 func (c *Client) SendFile(filePath string) error {
 	info, err := os.Stat(filePath)
@@ -163,7 +193,7 @@ func (c *Client) SendFile(filePath string) error {
 		return fmt.Errorf("get local ip failed: %w", err)
 	}
 
-	req := UploadMetaDataArgs{
+	req := upload.UploadMetaDataArgs{
 		Operation: "upload_file",
 		ClientIP:  ip,
 		FileName:  filepath.Base(filePath),
@@ -187,7 +217,7 @@ func (c *Client) SendFile(filePath string) error {
 }
 
 // 通过 RabbitMQ 做一次简单 RPC，请求上传，同时把自己本身的ip地址告诉leader，方便tcp_server.go监听
-func (c *Client) rpcUploadRequest(req UploadMetaDataArgs, timeout time.Duration) (*UploadMetaDataReply, error) {
+func (c *Client) rpcUploadRequest(req upload.UploadMetaDataArgs, timeout time.Duration) (*upload.UploadMetaDataReply, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, err
@@ -222,7 +252,7 @@ func (c *Client) rpcUploadRequest(req UploadMetaDataArgs, timeout time.Duration)
 				// 不是这次请求的响应，丢弃或根据需要缓存
 				continue
 			}
-			var resp UploadMetaDataReply
+			var resp upload.UploadMetaDataReply
 			if err := json.Unmarshal(d.Body, &resp); err != nil { // Unmarshal 反序列化失败
 				return nil, err
 			}

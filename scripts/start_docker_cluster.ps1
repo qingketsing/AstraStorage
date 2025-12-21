@@ -27,23 +27,50 @@ if (-not $dockerRunning) {
     exit 1
 }
 
-# Check if docker-compose exists
-if (!(Get-Command docker-compose -ErrorAction SilentlyContinue)) {
-    Write-Host "Error: docker-compose not found!" -ForegroundColor Red
+# Check docker compose command (support both old and new syntax)
+$dockerComposeCmd = ""
+if (Get-Command docker-compose -ErrorAction SilentlyContinue) {
+    $dockerComposeCmd = "docker-compose"
+} elseif (docker compose version 2>$null) {
+    $dockerComposeCmd = "docker compose"
+} else {
+    Write-Host "Error: Docker Compose not found!" -ForegroundColor Red
     Write-Host "Please install Docker Compose and try again." -ForegroundColor Yellow
+    exit 1
+}
+
+Write-Host "Using Docker Compose command: $dockerComposeCmd" -ForegroundColor Gray
+
+# Navigate to project root (parent of scripts directory)
+$scriptDir = $PSScriptRoot
+if (-not $scriptDir) {
+    $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+}
+$projectRoot = Split-Path -Parent $scriptDir
+Write-Host "Changing to project root: $projectRoot" -ForegroundColor Gray
+Set-Location $projectRoot
+
+# Verify docker-compose.yml exists
+if (-not (Test-Path "docker-compose.yml")) {
+    Write-Host "Error: docker-compose.yml not found in $projectRoot" -ForegroundColor Red
+    Write-Host "Current directory: $(Get-Location)" -ForegroundColor Yellow
     exit 1
 }
 
 # Stop and remove existing containers
 Write-Host "Cleaning up existing containers..." -ForegroundColor Yellow
-docker-compose down -v 2>&1 | Out-Null
+try {
+    & $dockerComposeCmd down -v 2>&1 | Out-Null
+} catch {
+    Write-Host "Warning: Cleanup encountered issues (this is usually ok)" -ForegroundColor Yellow
+}
 
 # Build and start containers
 Write-Host "Building Docker images..." -ForegroundColor Cyan
-docker-compose build
+& $dockerComposeCmd build
 
 Write-Host "`nStarting cluster nodes..." -ForegroundColor Cyan
-docker-compose up -d
+& $dockerComposeCmd up -d
 
 # Wait for containers to start
 Write-Host "`nWaiting for nodes to start..." -ForegroundColor Yellow
@@ -51,7 +78,7 @@ Start-Sleep -Seconds 8
 
 # Check container status
 Write-Host "`nContainer Status:" -ForegroundColor Cyan
-docker-compose ps
+& $dockerComposeCmd ps
 
 Write-Host "`n========================================" -ForegroundColor Green
 Write-Host "Cluster started successfully!" -ForegroundColor Green
