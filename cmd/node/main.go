@@ -15,6 +15,7 @@ import (
 
 	"multi_driver/internal/core/consensus/raft"
 	"multi_driver/internal/core/integration"
+	"multi_driver/internal/storage/delete"
 	"multi_driver/internal/storage/query"
 	"multi_driver/internal/storage/upload"
 )
@@ -84,6 +85,11 @@ func main() {
 	// 启动文件查询服务（Leader-aware，只有 Leader 才会实际监听队列）
 	go func() {
 		query.RunLeaderAwareQueryService(node, "file.query")
+	}()
+
+	// 启动文件删除服务（Leader-aware，只有 Leader 才会实际监听队列）
+	go func() {
+		delete.RunLeaderAwareDeleteService(node, "file.delete")
 	}()
 
 	// 启动健康检查 HTTP 服务器

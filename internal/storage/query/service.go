@@ -92,63 +92,43 @@ func RunLeaderAwareQueryService(node *integration.Node, queueName string) {
 	}
 }
 
-// handleQueryMessage 处理单个查询消息
-func handleQueryMessage(node *integration.Node, ch *ampq.Channel, d ampq.Delivery) {
-	var args QueryMetaDataArgs
-	if err := json.Unmarshal(d.Body, &args); err != nil {
-		log.Printf("[Query][%s] Failed to unmarshal query args: %v", node.ID, err)
-		_ = d.Ack(false)
-		return
-	}
-	log.Printf("[Query][%s] Received query request for file: %s", node.ID, args.FileName)
-
-	reply := QueryMetaDataReply{
+func QueryFileMetaData(node *integration.Node, fileName string) (*QueryMetaDataReply, error) {
+	reply := &QueryMetaDataReply{
 		OK:       false,
-		FileName: args.FileName,
+		FileName: fileName,
 	}
 
 	// 查询文件元数据
 	// 先在redis中查询是否存在数据
-	cacheKey := "file_meta:" + args.FileName
+	cacheKey := "file_meta:" + fileName
 
 	if node.RedisManager != nil {
 		redisClient := node.RedisManager.GetClient()
 		if redisClient != nil {
 			cachedData, err := redisClient.Get(cacheKey)
-
 			if err == nil && cachedData != "" {
-				// Redis 缓存命中
-				log.Printf("[Query][%s] Cache hit for file: %s", node.ID, args.FileName)
-
-				if err := json.Unmarshal([]byte(cachedData), &reply); err != nil {
-					log.Printf("[Query][%s] Failed to unmarshal cached data: %v", node.ID, err)
-					// 缓存数据损坏，继续从数据库查询
-				} else {
+				log.Printf("[Query][%s] Cache hit for file: %s", node.ID, fileName)
+				if err := json.Unmarshal([]byte(cachedData), reply); err == nil {
 					reply.OK = true
-					_ = d.Ack(false)
-					sendQueryReply(node, ch, &d, &reply)
-					return
+					return reply, nil
 				}
+				log.Printf("[Query][%s] Failed to unmarshal cached data: %v", node.ID, err)
 			}
 		}
 	}
 
 	// Redis 未命中或缓存数据损坏，从 PostgreSQL 查询
-	log.Printf("[Query][%s] Cache miss for file: %s, querying database", node.ID, args.FileName)
+	log.Printf("[Query][%s] Cache miss for file: %s, querying database", node.ID, fileName)
 
 	row := node.DB.QueryRow(`
 		SELECT file_name, file_size, created_at, storage_nodes, storage_add 
 		FROM files 
 		WHERE file_name = $1
-	`, args.FileName)
+	`, fileName)
 
 	var createdAt time.Time
-	err := row.Scan(&reply.FileName, &reply.FileSize, &createdAt, &reply.FileStorageAddr, &reply.FileTree)
-	if err != nil {
-		log.Printf("[Query][%s] File not found: %s, err: %v", node.ID, args.FileName, err)
-		_ = d.Ack(false)
-		replyQueryError(ch, &d, "File not found")
-		return
+	if err := row.Scan(&reply.FileName, &reply.FileSize, &createdAt, &reply.FileStorageAddr, &reply.FileTree); err != nil {
+		return nil, err
 	}
 
 	// 格式化时间
@@ -169,14 +149,34 @@ func handleQueryMessage(node *integration.Node, ch *ampq.Channel, d ampq.Deliver
 				if err != nil {
 					log.Printf("[Query][%s] Failed to cache query result: %v", node.ID, err)
 				} else {
-					log.Printf("[Query][%s] Cached query result for file: %s", node.ID, args.FileName)
+					log.Printf("[Query][%s] Cached query result for file: %s", node.ID, fileName)
 				}
 			}
 		}
 	}
+	return reply, nil
+}
+
+// handleQueryMessage 处理单个查询消息
+func handleQueryMessage(node *integration.Node, ch *ampq.Channel, d ampq.Delivery) {
+	var args QueryMetaDataArgs
+	if err := json.Unmarshal(d.Body, &args); err != nil {
+		log.Printf("[Query][%s] Failed to unmarshal query args: %v", node.ID, err)
+		_ = d.Ack(false)
+		return
+	}
+
+	reply, err := QueryFileMetaData(node, args.FileName)
+	if err != nil {
+		log.Printf("[Query][%s] File not found: %s, err: %v", node.ID, args.FileName, err)
+		_ = d.Ack(false)
+		replyQueryError(ch, &d, "File not found")
+		return
+	}
+	log.Printf("[Query][%s] Received query request for file: %s", node.ID, args.FileName)
 
 	_ = d.Ack(false)
-	sendQueryReply(node, ch, &d, &reply)
+	sendQueryReply(node, ch, &d, reply)
 }
 
 // sendQueryReply 发送查询成功响应

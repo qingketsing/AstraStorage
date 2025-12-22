@@ -413,3 +413,47 @@ func (dbc *DBConnection) ListFilesWithLocalStorage() ([]*FileInfo, error) {
 	}
 	return files, nil
 }
+
+// === 文件删除操作 ===
+
+// DeleteFileByName 根据文件名删除文件记录
+func (dbc *DBConnection) DeleteFileByName(fileName string) error {
+	query := `DELETE FROM files WHERE file_name = $1`
+	result, err := dbc.db.Exec(query, fileName)
+	if err != nil {
+		return fmt.Errorf("delete file by name failed: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("get rows affected failed: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("file not found: %s", fileName)
+	}
+
+	log.Printf("Deleted file record: %s, rows affected: %d", fileName, rowsAffected)
+	return nil
+}
+
+// DeleteFileByID 根据文件ID删除文件记录
+func (dbc *DBConnection) DeleteFileByID(fileID int64) error {
+	query := `DELETE FROM files WHERE id = $1`
+	result, err := dbc.db.Exec(query, fileID)
+	if err != nil {
+		return fmt.Errorf("delete file by id failed: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("get rows affected failed: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("file not found with id: %d", fileID)
+	}
+
+	log.Printf("Deleted file record with id: %d, rows affected: %d", fileID, rowsAffected)
+	return nil
+}

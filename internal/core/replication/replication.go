@@ -363,7 +363,7 @@ func (rm *ReplicationManager) handleMetadataConnection(conn net.Conn) {
 	// 设置超时
 	conn.SetDeadline(time.Now().Add(10 * time.Second))
 
-	// 读取协议头：命令\n文件名\n文件大小\n存储节点列表\n所有者ID\n
+	// 读取协议头
 	header := make([]byte, 1024)
 	n, err := conn.Read(header)
 	if err != nil {
@@ -373,8 +373,36 @@ func (rm *ReplicationManager) handleMetadataConnection(conn net.Conn) {
 	}
 
 	lines := strings.Split(string(header[:n]), "\n")
-	if len(lines) < 5 || lines[0] != "METADATA" {
+	if len(lines) < 2 {
 		log.Printf("[%s] invalid metadata header", rm.nodeID)
+		conn.Write([]byte("ER"))
+		return
+	}
+
+	command := lines[0]
+
+	// 处理删除元数据命令
+	if command == "DELETE_META" {
+		fileName := lines[1]
+		log.Printf("[%s] received delete metadata request for file: %s", rm.nodeID, fileName)
+
+		// 从数据库删除元数据
+		if rm.db != nil {
+			if err := rm.db.DeleteFileByName(fileName); err != nil {
+				log.Printf("[%s] delete metadata from database failed: %v", rm.nodeID, err)
+				// 即使失败也返回 OK，因为文件可能已经不存在
+			} else {
+				log.Printf("[%s] deleted metadata from database: %s", rm.nodeID, fileName)
+			}
+		}
+
+		conn.Write([]byte("OK"))
+		return
+	}
+
+	// 处理正常的元数据同步命令：METADATA\n文件名\n文件大小\n存储节点列表\n所有者ID\n
+	if command != "METADATA" || len(lines) < 5 {
+		log.Printf("[%s] invalid metadata command", rm.nodeID)
 		conn.Write([]byte("ER"))
 		return
 	}
@@ -585,4 +613,192 @@ func calculateChecksum(filePath string) (string, error) {
 	}
 
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+// === 文件删除功能 ===
+
+// DeleteFile 删除文件（包括本地文件和所有副本）
+// 返回成功删除的节点列表
+func (rm *ReplicationManager) DeleteFile(fileName string) ([]string, error) {
+	// 1. 查询文件信息
+	fileInfo, err := rm.db.GetFileByName(fileName)
+	if err != nil {
+		return nil, fmt.Errorf("query file failed: %w", err)
+	}
+
+	// 2. 解析存储节点列表
+	storageNodes := strings.Split(fileInfo.StorageNodes, ",")
+	log.Printf("[%s] deleting file %s from nodes: %v", rm.nodeID, fileName, storageNodes)
+
+	// 3. 向所有存储节点发送删除请求
+	successNodes := make([]string, 0)
+	for _, nodeID := range storageNodes {
+		nodeID = strings.TrimSpace(nodeID)
+		if nodeID == "" {
+			continue
+		}
+
+		if nodeID == rm.nodeID {
+			// 删除本地文件
+			if fileInfo.LocalPath != "" {
+				if err := os.Remove(fileInfo.LocalPath); err != nil {
+					log.Printf("[%s] delete local file failed: %v", rm.nodeID, err)
+				} else {
+					log.Printf("[%s] deleted local file: %s", rm.nodeID, fileInfo.LocalPath)
+					successNodes = append(successNodes, rm.nodeID)
+				}
+			}
+		} else {
+			// 向其他节点发送删除请求
+			var node *cluster.Node
+			for _, n := range rm.membership.GetAllNodes() {
+				if n.ID == nodeID {
+					node = n
+					break
+				}
+			}
+
+			if node == nil {
+				log.Printf("[%s] node %s not found in membership", rm.nodeID, nodeID)
+				continue
+			}
+
+			if err := rm.deleteFileFromNode(node, fileName); err != nil {
+				log.Printf("[%s] delete file from node %s failed: %v", rm.nodeID, nodeID, err)
+			} else {
+				log.Printf("[%s] successfully deleted file from node %s", rm.nodeID, nodeID)
+				successNodes = append(successNodes, nodeID)
+			}
+		}
+	}
+
+	if len(successNodes) == 0 {
+		return successNodes, fmt.Errorf("failed to delete file from any node")
+	}
+
+	return successNodes, nil
+}
+
+// deleteFileFromNode 向指定节点发送删除文件请求
+func (rm *ReplicationManager) deleteFileFromNode(node *cluster.Node, fileName string) error {
+	// 解析节点地址
+	host, _, err := net.SplitHostPort(node.Address)
+	if err != nil {
+		return fmt.Errorf("invalid node address: %w", err)
+	}
+
+	// 连接到节点的删除服务端口
+	deleteAddr := net.JoinHostPort(host, "19003") // 固定的删除服务端口
+
+	conn, err := net.DialTimeout("tcp", deleteAddr, 5*time.Second)
+	if err != nil {
+		return fmt.Errorf("dial node failed: %w", err)
+	}
+	defer conn.Close()
+
+	// 设置超时
+	conn.SetDeadline(time.Now().Add(10 * time.Second))
+
+	// 发送删除协议头：DELETE\n文件名\n
+	header := fmt.Sprintf("DELETE\n%s\n", fileName)
+	if _, err := conn.Write([]byte(header)); err != nil {
+		return fmt.Errorf("send delete request failed: %w", err)
+	}
+
+	// 等待响应
+	response := make([]byte, 3)
+	n, err := conn.Read(response)
+	if err != nil {
+		return fmt.Errorf("read response failed: %w", err)
+	}
+
+	if n != 2 || string(response[:2]) != "OK" {
+		return fmt.Errorf("node returned error: %s", string(response[:n]))
+	}
+
+	return nil
+}
+
+// StartDeleteServer 启动删除接收服务
+func (rm *ReplicationManager) StartDeleteServer(listenPort string) error {
+	if listenPort == "" {
+		listenPort = "19003" // 默认端口
+	}
+
+	listener, err := net.Listen("tcp", ":"+listenPort)
+	if err != nil {
+		return fmt.Errorf("start delete server failed: %w", err)
+	}
+
+	log.Printf("[%s] delete server started on port %s", rm.nodeID, listenPort)
+
+	go func() {
+		defer listener.Close()
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				log.Printf("[%s] accept delete connection failed: %v", rm.nodeID, err)
+				continue
+			}
+			go rm.handleDeleteConnection(conn)
+		}
+	}()
+
+	return nil
+}
+
+// handleDeleteConnection 处理删除请求连接
+func (rm *ReplicationManager) handleDeleteConnection(conn net.Conn) {
+	defer conn.Close()
+
+	// 设置读取超时
+	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+
+	// 读取协议头
+	header := make([]byte, 1024)
+	n, err := conn.Read(header)
+	if err != nil {
+		log.Printf("[%s] read delete header failed: %v", rm.nodeID, err)
+		conn.Write([]byte("ER"))
+		return
+	}
+
+	// 解析协议：DELETE\n文件名\n
+	lines := strings.Split(string(header[:n]), "\n")
+	if len(lines) < 2 || lines[0] != "DELETE" {
+		log.Printf("[%s] invalid delete protocol", rm.nodeID)
+		conn.Write([]byte("ER"))
+		return
+	}
+
+	fileName := lines[1]
+	log.Printf("[%s] received delete request for file: %s", rm.nodeID, fileName)
+
+	// 查询文件信息
+	fileInfo, err := rm.db.GetFileByName(fileName)
+	if err != nil {
+		log.Printf("[%s] file not found: %s, error: %v", rm.nodeID, fileName, err)
+		conn.Write([]byte("OK")) // 文件不存在也返回成功
+		return
+	}
+
+	// 删除本地文件（如果存在）
+	if fileInfo.LocalPath != "" {
+		if err := os.Remove(fileInfo.LocalPath); err != nil {
+			log.Printf("[%s] delete local file failed: %v", rm.nodeID, err)
+			// 继续删除数据库记录
+		} else {
+			log.Printf("[%s] deleted local file: %s", rm.nodeID, fileInfo.LocalPath)
+		}
+	}
+
+	// 删除数据库记录
+	if err := rm.db.DeleteFileByName(fileName); err != nil {
+		log.Printf("[%s] delete database record failed: %v", rm.nodeID, err)
+		conn.Write([]byte("ER"))
+		return
+	}
+
+	log.Printf("[%s] successfully deleted file: %s", rm.nodeID, fileName)
+	conn.Write([]byte("OK"))
 }
