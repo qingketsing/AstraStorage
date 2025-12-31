@@ -97,7 +97,7 @@ func main() {
 
 	// 启动文件更新服务（Leader-aware，只有 Leader 才会实际监听队列）
 	go func() {
-		update.RunLeaderAwareUpdateService(node, "file.update")
+		update.RunLeaderAwareUpdateService(node, "file.update", "", *uploadPort, 5*time.Minute)
 	}()
 
 	// 启动文件下载服务（Leader-aware，只有 Leader 才会实际监听队列）

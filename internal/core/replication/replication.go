@@ -400,6 +400,37 @@ func (rm *ReplicationManager) handleMetadataConnection(conn net.Conn) {
 		return
 	}
 
+	// 处理更新元数据命令：UPDATE_META\n文件名\n文件大小\n存储节点列表\n
+	if command == "UPDATE_META" {
+		if len(lines) < 4 {
+			log.Printf("[%s] invalid update metadata header", rm.nodeID)
+			conn.Write([]byte("ER"))
+			return
+		}
+
+		fileName := lines[1]
+		var fileSize int64
+		fmt.Sscanf(lines[2], "%d", &fileSize)
+		storageNodes := lines[3]
+
+		log.Printf("[%s] received update metadata request for file: %s, size=%d, nodes=%s",
+			rm.nodeID, fileName, fileSize, storageNodes)
+
+		// 更新数据库中的元数据
+		if rm.db != nil {
+			query := `UPDATE files SET file_size = $1, storage_nodes = $2, updated_at = NOW() WHERE file_name = $3`
+			if _, err := rm.db.Exec(query, fileSize, storageNodes, fileName); err != nil {
+				log.Printf("[%s] update metadata in database failed: %v", rm.nodeID, err)
+				conn.Write([]byte("ER"))
+				return
+			}
+			log.Printf("[%s] updated metadata in database: %s", rm.nodeID, fileName)
+		}
+
+		conn.Write([]byte("OK"))
+		return
+	}
+
 	// 处理正常的元数据同步命令：METADATA\n文件名\n文件大小\n存储节点列表\n所有者ID\n
 	if command != "METADATA" || len(lines) < 5 {
 		log.Printf("[%s] invalid metadata command", rm.nodeID)
@@ -800,5 +831,165 @@ func (rm *ReplicationManager) handleDeleteConnection(conn net.Conn) {
 	}
 
 	log.Printf("[%s] successfully deleted file: %s", rm.nodeID, fileName)
+	conn.Write([]byte("OK"))
+}
+
+// StartUpdateServer 启动更新接收服务
+func (rm *ReplicationManager) StartUpdateServer(listenPort string) error {
+	if listenPort == "" {
+		listenPort = "19004" // 默认端口
+	}
+
+	listener, err := net.Listen("tcp", ":"+listenPort)
+	if err != nil {
+		return fmt.Errorf("start update server failed: %w", err)
+	}
+
+	log.Printf("[%s] update server started on port %s", rm.nodeID, listenPort)
+
+	go func() {
+		defer listener.Close()
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				log.Printf("[%s] accept update connection failed: %v", rm.nodeID, err)
+				continue
+			}
+			go rm.handleUpdateConnection(conn)
+		}
+	}()
+
+	return nil
+}
+
+// handleUpdateConnection 处理文件更新请求连接
+func (rm *ReplicationManager) handleUpdateConnection(conn net.Conn) {
+	defer conn.Close()
+
+	// 设置超时
+	conn.SetDeadline(time.Now().Add(30 * time.Second))
+
+	// 读取协议头：UPDATE\n文件名\n文件大小\n
+	header := make([]byte, 1024)
+	n, err := conn.Read(header)
+	if err != nil {
+		log.Printf("[%s] read update header failed: %v", rm.nodeID, err)
+		conn.Write([]byte("ER"))
+		return
+	}
+
+	lines := strings.Split(string(header[:n]), "\n")
+	if len(lines) < 3 || lines[0] != "UPDATE" {
+		log.Printf("[%s] invalid update protocol", rm.nodeID)
+		conn.Write([]byte("ER"))
+		return
+	}
+
+	fileName := lines[1]
+	var fileSize int64
+	fmt.Sscanf(lines[2], "%d", &fileSize)
+
+	log.Printf("[%s] receiving file update: %s, size=%d", rm.nodeID, fileName, fileSize)
+
+	// 查询文件信息
+	fileInfo, err := rm.db.GetFileByName(fileName)
+	if err != nil {
+		log.Printf("[%s] file not found: %s, error: %v", rm.nodeID, fileName, err)
+		conn.Write([]byte("ER"))
+		return
+	}
+
+	// 备份旧文件
+	if fileInfo.LocalPath != "" {
+		oldFilePath := fileInfo.LocalPath + ".old"
+		if err := os.Rename(fileInfo.LocalPath, oldFilePath); err != nil {
+			log.Printf("[%s] backup old file failed: %v", rm.nodeID, err)
+		} else {
+			log.Printf("[%s] backed up old file to: %s", rm.nodeID, oldFilePath)
+			defer os.Remove(oldFilePath) // 成功后删除备份
+		}
+	}
+
+	// 确保存储目录存在
+	if err := os.MkdirAll(rm.storageDir, 0755); err != nil {
+		log.Printf("[%s] create storage dir failed: %v", rm.nodeID, err)
+		conn.Write([]byte("ER"))
+		return
+	}
+
+	// 创建新文件
+	localPath := filepath.Join(rm.storageDir, fileName)
+	file, err := os.Create(localPath)
+	if err != nil {
+		log.Printf("[%s] create local file failed: %v", rm.nodeID, err)
+		conn.Write([]byte("ER"))
+		return
+	}
+	defer file.Close()
+
+	// 接收文件内容
+	received := int64(0)
+	buf := make([]byte, ChunkSize)
+
+	// 计算已读取的header之后的剩余数据
+	headerEnd := len("UPDATE\n") + len(fileName) + 1 + len(lines[2]) + 1
+	if n > headerEnd {
+		// header之后还有数据，先写入
+		extraData := header[headerEnd:n]
+		written, err := file.Write(extraData)
+		if err != nil {
+			log.Printf("[%s] write file failed: %v", rm.nodeID, err)
+			conn.Write([]byte("ER"))
+			return
+		}
+		received += int64(written)
+	}
+
+	// 继续接收剩余数据
+	for received < fileSize {
+		toRead := fileSize - received
+		if toRead > int64(len(buf)) {
+			toRead = int64(len(buf))
+		}
+
+		n, err := conn.Read(buf[:toRead])
+		if err != nil && err != io.EOF {
+			log.Printf("[%s] read file data failed: %v", rm.nodeID, err)
+			conn.Write([]byte("ER"))
+			return
+		}
+		if n == 0 {
+			break
+		}
+
+		_, err = file.Write(buf[:n])
+		if err != nil {
+			log.Printf("[%s] write file failed: %v", rm.nodeID, err)
+			conn.Write([]byte("ER"))
+			return
+		}
+		received += int64(n)
+	}
+
+	if received != fileSize {
+		log.Printf("[%s] incomplete receive: expected=%d, received=%d", rm.nodeID, fileSize, received)
+		conn.Write([]byte("ER"))
+		return
+	}
+
+	file.Close()
+
+	// 更新数据库中的文件信息
+	if rm.db != nil {
+		query := `UPDATE files SET file_size = $1, local_path = $2, updated_at = NOW() WHERE file_name = $3`
+		if _, err := rm.db.Exec(query, fileSize, localPath, fileName); err != nil {
+			log.Printf("[%s] update file in database failed: %v", rm.nodeID, err)
+			// 不返回错误，因为文件已经成功接收
+		} else {
+			log.Printf("[%s] updated file in database: name=%s, size=%d", rm.nodeID, fileName, fileSize)
+		}
+	}
+
+	log.Printf("[%s] successfully received file update: %s", rm.nodeID, fileName)
 	conn.Write([]byte("OK"))
 }

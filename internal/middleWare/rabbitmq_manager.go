@@ -44,6 +44,7 @@ func (m *RabbitMQManager) watchLeadership() {
 			_, isLeader := m.raft.GetState()
 
 			m.mu.Lock()
+			// 如果状态发生变化
 			if isLeader != m.lastLeader {
 				if isLeader {
 					m.connect()
@@ -51,21 +52,29 @@ func (m *RabbitMQManager) watchLeadership() {
 					m.disconnect()
 				}
 				m.lastLeader = isLeader
+			} else if isLeader && m.client == nil {
+				// 如果是 Leader 但连接不存在，尝试重新连接
+				m.connect()
 			}
 			m.mu.Unlock()
 		}
 	}
 }
 
-// connect 建立 RabbitMQ 连接
+// connect 建立 RabbitMQ 连接（带重试机制）
 func (m *RabbitMQManager) connect() {
 	if m.client != nil {
 		return
 	}
 
+	// 尝试连接，如果失败则记录日志但不返回
+	// watchLeadership 循环会继续重试
 	client, err := NewRabbitMQConnection(m.url)
 	if err != nil {
-		log.Printf("[%s] RabbitMQ 连接失败: %v", m.nodeID, err)
+		// 只在第一次失败时打印详细错误，避免日志过多
+		if m.lastLeader {
+			log.Printf("[%s] RabbitMQ 连接失败（将继续重试）: %v", m.nodeID, err)
+		}
 		return
 	}
 

@@ -95,6 +95,10 @@ func NewNode(id, address string, me int, peerAddresses []string, persister raft.
 	if err := node.ReplicationMgr.StartDeleteServer("19003"); err != nil {
 		return nil, err
 	}
+	// 启动更新接收服务
+	if err := node.ReplicationMgr.StartUpdateServer("19004"); err != nil {
+		return nil, err
+	}
 
 	// 10. 启动服务
 	if err := node.Discovery.Start(); err != nil {
