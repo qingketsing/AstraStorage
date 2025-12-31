@@ -22,28 +22,13 @@ const (
 // token 用于在第一步校验连接是否合法
 // 返回值 downloadAddr 是客户端应当使用的 "ip:port" 地址
 func StartTCPDownloadServer(listenIP string, downloadPort int, token string) (string, error) {
-	// 如果 listenIP 为空，使用 0.0.0.0 监听所有接口
-	actualListenIP := listenIP
-	if actualListenIP == "" {
-		actualListenIP = "0.0.0.0"
-	}
-	
 	// 使用指定的端口，如果为 0 则系统自动分配
-	listener, err := net.Listen("tcp", net.JoinHostPort(actualListenIP, fmt.Sprintf("%d", downloadPort)))
+	listener, err := net.Listen("tcp", net.JoinHostPort(listenIP, fmt.Sprintf("%d", downloadPort)))
 	if err != nil {
-		return "", fmt.Errorf("failed to start TCP server on %s: %w", actualListenIP, err)
+		return "", fmt.Errorf("failed to start TCP server on %s: %w", listenIP, err)
 	}
 
-	// 获取实际监听的地址
 	downloadAddr := listener.Addr().String()
-	
-	// 如果原始 listenIP 不为空，使用它构建返回地址（而不是从 listener 获取）
-	if listenIP != "" {
-		if _, port, err := net.SplitHostPort(downloadAddr); err == nil {
-			downloadAddr = net.JoinHostPort(listenIP, port)
-		}
-	}
-	
 	log.Printf("TCP download server started for token %s on %s", token, downloadAddr)
 
 	go func() {
