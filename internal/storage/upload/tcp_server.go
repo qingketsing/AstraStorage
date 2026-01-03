@@ -25,8 +25,9 @@ type UploadContext struct {
 // listenIP 是当前节点对外可达的 IP（例如 "127.0.0.1" 或 内网 IP）
 // uploadPort 是指定的上传端口（0 表示系统自动分配）
 // token 用于在第一步校验连接是否合法
+// ttl 指定了监听器的最大生存时间，如果在此时间内无需连接，监听器将关闭
 // 返回值 uploadAddr 是客户端应当使用的 "ip:port" 地址
-func StartTCPUploadServer(listenIP string, uploadPort int, token string, ctx *UploadContext) (string, error) {
+func StartTCPUploadServer(listenIP string, uploadPort int, token string, ttl time.Duration, ctx *UploadContext) (string, error) {
 	// 使用指定的端口，如果为 0 则系统自动分配
 	listener, err := net.Listen("tcp", net.JoinHostPort(listenIP, fmt.Sprintf("%d", uploadPort)))
 	if err != nil {
@@ -34,13 +35,26 @@ func StartTCPUploadServer(listenIP string, uploadPort int, token string, ctx *Up
 	}
 
 	uploadAddr := listener.Addr().String()
-	log.Printf("TCP upload server started for token %s on %s", token, uploadAddr)
+	log.Printf("TCP upload server started for token %s on %s with TTL %v", token, uploadAddr, ttl)
 
 	go func() {
 		defer listener.Close()
+		
+		// 设置 Deadline，防止永久阻塞
+		if tcpListener, ok := listener.(*net.TCPListener); ok {
+			_ = tcpListener.SetDeadline(time.Now().Add(ttl))
+		}
+
 		conn, err := listener.Accept()
 		if err != nil {
-			log.Printf("accept upload connection failed: %v", err)
+			// 如果是超时错误，这是预期的行为（清理资源）
+			if opErr, ok := err.(*net.OpError); ok && opErr.Timeout() {
+				log.Printf("upload listener for token %s timed out (resource cleaned up)", token)
+			} else {
+				log.Printf("accept upload connection failed: %v", err)
+			}
+			// 移除过期的 token，虽然 TokenStore.Get 会检查，但主动删除更干净
+			globalTokenStore.Delete(token)
 			return
 		}
 		defer conn.Close()

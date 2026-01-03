@@ -20,8 +20,9 @@ const (
 // listenIP 是当前节点对外可达的 IP
 // downloadPort 是指定的下载端口（0 表示系统自动分配）
 // token 用于在第一步校验连接是否合法
+// ttl 指定了监听器的最大生存时间，如果在此时间内无需连接，监听器将关闭
 // 返回值 downloadAddr 是客户端应当使用的 "ip:port" 地址
-func StartTCPDownloadServer(listenIP string, downloadPort int, token string) (string, error) {
+func StartTCPDownloadServer(listenIP string, downloadPort int, token string, ttl time.Duration) (string, error) {
 	// 使用指定的端口，如果为 0 则系统自动分配
 	listener, err := net.Listen("tcp", net.JoinHostPort(listenIP, fmt.Sprintf("%d", downloadPort)))
 	if err != nil {
@@ -29,13 +30,26 @@ func StartTCPDownloadServer(listenIP string, downloadPort int, token string) (st
 	}
 
 	downloadAddr := listener.Addr().String()
-	log.Printf("TCP download server started for token %s on %s", token, downloadAddr)
+	log.Printf("TCP download server started for token %s on %s with TTL %v", token, downloadAddr, ttl)
 
 	go func() {
 		defer listener.Close()
+
+		// 设置 Deadline，防止永久阻塞
+		if tcpListener, ok := listener.(*net.TCPListener); ok {
+			_ = tcpListener.SetDeadline(time.Now().Add(ttl))
+		}
+
 		conn, err := listener.Accept()
 		if err != nil {
-			log.Printf("accept download connection failed: %v", err)
+			// 如果是超时错误，这是预期的行为（清理资源）
+			if opErr, ok := err.(*net.OpError); ok && opErr.Timeout() {
+				log.Printf("download listener for token %s timed out (resource cleaned up)", token)
+			} else {
+				log.Printf("accept download connection failed: %v", err)
+			}
+			// 移除过期的 token
+			globalDownloadTokenStore.Delete(token)
 			return
 		}
 		defer conn.Close()
@@ -44,6 +58,7 @@ func StartTCPDownloadServer(listenIP string, downloadPort int, token string) (st
 			log.Printf("handle download failed: %v", err)
 		}
 	}()
+
 
 	return downloadAddr, nil
 }
@@ -199,7 +214,7 @@ func HandleDownloadControlRequest(conn net.Conn) error {
 	globalDownloadTokenStore.Put(token, sess)
 
 	// 启动下载服务器
-	downloadAddr, err := StartTCPDownloadServer("0.0.0.0", downloadPort, token)
+	downloadAddr, err := StartTCPDownloadServer("0.0.0.0", downloadPort, token, 5*time.Minute)
 	if err != nil {
 		// 发送错误响应
 		response := fmt.Sprintf("ERROR\n%s\n", err.Error())

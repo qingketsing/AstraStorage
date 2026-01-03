@@ -225,7 +225,7 @@ func handleUpdateMetaMessage(node *integration.Node, ch *amqp.Channel, d *amqp.D
 		Node:   node,
 	}
 
-	updateAddr, err := StartTCPUpdateServer(listenIP, updatePort, token, ctx, fileInfo)
+	updateAddr, err := StartTCPUpdateServer(listenIP, updatePort, token, tokenTTL, ctx, fileInfo)
 	if err != nil {
 		log.Printf("[Update][%s] start TCP update server failed: %v", node.ID, err)
 		replyUpdateError(ch, d, "start tcp update server failed: "+err.Error())
@@ -293,7 +293,7 @@ func handleNewFileUpload(node *integration.Node, ch *amqp.Channel, d *amqp.Deliv
 		Node:   node,
 	}
 
-	updateAddr, err := StartTCPUpdateServer(listenIP, updatePort, token, ctx, nil)
+	updateAddr, err := StartTCPUpdateServer(listenIP, updatePort, token, tokenTTL, ctx, nil)
 	if err != nil {
 		log.Printf("[Update][%s] start TCP update server failed: %v", node.ID, err)
 		replyUpdateError(ch, d, "start tcp update server failed: "+err.Error())
@@ -338,20 +338,34 @@ func handleNewFileUpload(node *integration.Node, ch *amqp.Channel, d *amqp.Deliv
 }
 
 // StartTCPUpdateServer 启动 TCP 更新服务器
-func StartTCPUpdateServer(listenIP string, updatePort int, token string, ctx *UpdateContext, fileInfo *db.FileInfo) (string, error) {
+// ttl 指定了监听器的最大生存时间，如果在此时间内无需连接，监听器将关闭
+func StartTCPUpdateServer(listenIP string, updatePort int, token string, ttl time.Duration, ctx *UpdateContext, fileInfo *db.FileInfo) (string, error) {
 	listener, err := net.Listen("tcp", net.JoinHostPort(listenIP, fmt.Sprintf("%d", updatePort)))
 	if err != nil {
 		return "", fmt.Errorf("failed to start TCP server on %s: %w", listenIP, err)
 	}
 
 	updateAddr := listener.Addr().String()
-	log.Printf("[Update] TCP update server started for token %s on %s", token, updateAddr)
+	log.Printf("[Update] TCP update server started for token %s on %s with TTL %v", token, updateAddr, ttl)
 
 	go func() {
 		defer listener.Close()
+
+		// 设置 Deadline，防止永久阻塞
+		if tcpListener, ok := listener.(*net.TCPListener); ok {
+			_ = tcpListener.SetDeadline(time.Now().Add(ttl))
+		}
+
 		conn, err := listener.Accept()
 		if err != nil {
-			log.Printf("[Update] accept update connection failed: %v", err)
+			// 如果是超时错误，这是预期的行为（清理资源）
+			if opErr, ok := err.(*net.OpError); ok && opErr.Timeout() {
+				log.Printf("[Update] listener for token %s timed out (resource cleaned up)", token)
+			} else {
+				log.Printf("[Update] accept update connection failed: %v", err)
+			}
+			// 移除过期的 token
+			globalUpdateTokenStore.Delete(token)
 			return
 		}
 		defer conn.Close()

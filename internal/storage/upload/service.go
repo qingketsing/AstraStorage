@@ -206,7 +206,7 @@ func handleUploadMetaMessage(node *integration.Node, ch *amqp.Channel, d *amqp.D
 		ctx.ReplicationMgr = node.ReplicationMgr
 	}
 
-	uploadAddr, err := StartTCPUploadServer(listenIP, uploadPort, token, ctx)
+	uploadAddr, err := StartTCPUploadServer(listenIP, uploadPort, token, tokenTTL, ctx)
 	if err != nil {
 		log.Printf("[%s] start TCP upload server failed: %v", node.ID, err)
 		replyUploadError(ch, d, "start tcp upload server failed: "+err.Error())
