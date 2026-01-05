@@ -1,340 +1,121 @@
-# AstraStorage - 分布式文件存储系统
+# AstraStorage
 
-## 项目简介
+AstraStorage is a distributed file storage system. The reason why I create this system is that the download speed of commercial cloud storage service is too slow,so I create this system for person who has many servers and want to make them as a storage system.
 
-AstraStorage 是一个基于 Raft 共识算法的分布式文件存储系统，提供高可用、高可靠的文件存储服务。
+This Storage system used redis, rabbitMQ And postgresql.The postgresql is used to store metadata, and message queue is used to communicate with leader node. Each node has a sql and the redis and rabbitMQ is only listen to leader node. 
 
-### 核心特性
+For Leader node, I used Raft to election leader node. And the leader node will handle all the write requests and broadcast the write requests to other nodes.
 
-- **🎯 Raft 共识算法**：保证集群一致性，自动 Leader 选举和故障转移
-- **📦 文件自动复制**：文件自动复制到多个节点，确保数据安全
-- **🚀 高性能查询**：基于 Redis 的多级缓存，提供毫秒级查询响应
-- **💾 元数据同步**：所有节点保持元数据一致性，支持快速故障恢复
-- **🔄 消息队列解耦**：使用 RabbitMQ 实现客户端与服务端的解耦
-- **🐳 容器化部署**：完整的 Docker Compose 编排，一键启动 5 节点集群
+This system povided the service of upload, download, delete, query and update. In the future, I'm ganna to add the Download offline service and some interesting features.
 
-### 技术栈
+hmm, honestly speaking, I don't know if you really need this system. If you have some advice please contact me LOL.
 
-- **语言**: Go 1.23
-- **共识算法**: Raft
-- **消息队列**: RabbitMQ
-- **缓存**: Redis
-- **数据库**: PostgreSQL
-- **容器化**: Docker & Docker Compose
+Anyway, Love and Peace~
 
-### 架构特点
+## File Tree
 
-1. **Leader-Only 处理**：只有 Leader 节点处理客户端请求，确保一致性
-2. **TCP 直传**：文件内容通过 TCP 直接传输，避免 MQ 传输大文件
-3. **两阶段上传**：元数据请求 → 获取上传地址 → TCP 传输文件
-4. **智能缓存**：Redis 缓存热点文件元数据，减少数据库查询压力
-
-## 快速开始
-
-### 前置要求
-
-- Docker Desktop
-- Go 1.23+
-- PowerShell 5.1+ (Windows)
-
-### 启动集群
-
-```powershell
-# 启动 5 节点集群（包含 PostgreSQL、Redis、RabbitMQ）
-.\scripts\start_docker_cluster.ps1
-
-# 查看集群状态
-.\scripts\test_cluster.ps1
-
-# 停止集群
-.\scripts\stop_docker_cluster.ps1
 ```
-
-### 运行测试
-
-```powershell
-# 文件上传测试
-go test -v ./tests -run TestFileUploadIntegration
-
-# 文件查询测试
-go test -v ./tests -run TestFileQueryIntegration
-
-# 元数据同步测试
-go test -v ./tests -run TestMetadataSyncToAllNodes
-```
-
-## 项目结构
-
-```text
 .
-├── cmd/                    # 可执行程序入口
-│   ├── client/             # 客户端 CLI，通过 RabbitMQ 发送文件上传/查询请求
-│   └── node/               # 存储节点主程序，运行 Raft + 存储服务
-├── internal/
-│   ├── core/               # 分布式核心逻辑
-│   │   ├── cluster/        # 节点发现、心跳监控、成员管理、Raft RPC
-│   │   ├── consensus/      # Raft 共识算法实现、Leader 协调器
-│   │   │   └── raft/       # Raft 核心：选举、日志复制、持久化
-│   │   ├── integration/    # Node 整合层：Raft + 集群 + DB + 中间件
-│   │   └── replication/    # 文件复制管理器：TCP 服务器、元数据同步
-│   ├── db/                 # 数据库访问层
-│   │   ├── connection.go   # PostgreSQL 连接管理
-│   │   └── repository.go   # 文件元数据的 CRUD 操作
-│   ├── middleware/         # 中间件封装
-│   │   ├── Redis.go        # Redis 客户端封装
-│   │   ├── redis_manager.go # Redis 连接管理器（Leader-aware）
-│   │   ├── RabbitMQ.go     # RabbitMQ 客户端封装
-│   │   └── rabbitmq_manager.go # RabbitMQ 连接管理器（Leader-aware）
-│   └── storage/            # 存储服务层
-│       ├── storage.go      # 存储接口定义
-│       ├── query/          # 文件查询服务
-│       │   └── service.go  # 查询元数据服务（支持 Redis 缓存）
-│       └── upload/         # 文件上传服务
-│           ├── service.go  # 上传元数据服务（生成上传令牌）
-│           └── tcp_server.go # TCP 上传服务器（接收文件内容）
-├── tests/                  # 集成测试
-│   ├── file_upload_test.go      # 文件上传集成测试
-│   ├── file_query_test.go       # 文件查询集成测试（含缓存测试）
-│   ├── metadata_sync_test.go    # 元数据同步测试
-│   ├── QUICKSTART.md            # 测试快速入门指南
-│   └── README.md                # 测试说明文档
-├── scripts/                # 运维脚本（PowerShell）
-│   ├── start_docker_cluster.ps1 # 启动 Docker 集群
-│   ├── stop_docker_cluster.ps1  # 停止 Docker 集群
-│   ├── test_cluster.ps1         # 测试集群健康状态
-│   ├── start_nodes.ps1          # 本地启动节点（开发用）
-│   └── view_docker_logs.ps1     # 查看容器日志
-├── docker/                 # Docker 相关文档
-│   ├── init-postgres.sh    # PostgreSQL 初始化脚本
-│   ├── README.md           # Docker 部署说明
-│   ├── TEST_SUCCESS.md     # 测试成功记录
-│   └── TROUBLESHOOTING.md  # 故障排查指南
-├── bin/                    # 编译产物输出目录
-├── Dockerfile              # 节点镜像构建文件
-├── docker-compose.yml      # 集群编排配置（5节点+中间件）
-├── go.mod                  # Go 模块依赖
-└── README.md               # 项目说明文档
+├── bin
+│   ├── node        # For Linux
+│   └── node.exe    # For Windows
+├── cmd             # Command line tools
+│   ├── client      # As it says XD
+│   └── node        # As it says 2 XD
+├── docker          # Docker setup files
+├── internal        # Internal Part
+│   ├── core        # Core Part
+│   │   ├── cluster               # Cluster Part
+│   │   │   ├── cluster.go        # Cluster Manager
+│   │   │   ├── cluster_test.go   # Test for cluster
+│   │   │   └── node.go           # Node Manager
+│   │   └── repository            # Repository Part
+│   │       └── repository.go     # Repository Manager
+│   ├── middleware                # Middleware Part 
+│   │   ├── RabbitMQ.go           
+│   │   ├── rabbitmq_manager.go   # RabbitMQ Manager
+│   │   ├── Redis.go              
+│   │   └── redis_manager.go      # Redis Manager
+│   └── storage                   # Storage Part
+│       ├── storage.go
+│       ├── delete                # Delete Service
+│       │   └── service.go
+│       ├── download              # Download Service
+│       │   ├── servive.go
+│       │   └── tcp_server.go
+│       ├── query                 # Query Service
+│       │   └── service.go
+│       ├── update                # Update Service
+│       │   └── service.go
+│       └── upload                # Upload Service
+│           ├── service.go
+│           └── tcp_server.go
+├── scripts                       # Scripts Part
+│   ├── init_database.sql        # Initialize the Database
+│   ├── run_integration_test.ps1 # Run Integration Test
+│   ├── start_docker_cluster.ps1 # Start Docker Cluster
+│   ├── start_nodes.ps1          # Start cmd For Windows
+│   ├── stop_docker_cluster.ps1  # Stop Docker Cluster
+│   ├── stop_nodes.ps1           # Stop cmd For Windows
+│   ├── test_cluster.ps1         # Test Cluster
+│   └── view_docker_logs.ps1     # Check Docker Logs
+├── tests                        # Tests Part
+│   ├── file_delete_test.go      # As it says XD
+│   ├── file_query_test.go 
+│   ├── file_update_test.go
+│   ├── file_upload_download_test.go
+│   ├── file_upload_test.go
+│   ├── metadata_sync_test.go
+│   ├── QUICKSTART.md            # Generated by AI XD
+│   └── README.md                # Generated by AI 2 
+├── .dockerignore
+├── docker-compose.yml           # Compose File
+├── Dockerfile                   # Dockerfile
+├── go.mod
+├── go.sum
+└── LICENSE                      # This is the License
 ```
 
-## 系统架构
+## Service Description
 
-### 集群拓扑
+Before we introduce the service, we should know that the file transport is based on TCP, and it was split into chunks, each chunk is 1MB.
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    客户端 (Client)                        │
-│                 RabbitMQ RPC 请求/响应                     │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│                   RabbitMQ 消息队列                       │
-│         file.upload (上传)  /  file.query (查询)          │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     ▼
-        ┌────────────────────────┐
-        │   Leader 节点 (Node)    │ ◄──── Raft 选举
-        │  - 处理所有客户端请求    │
-        │  - 连接 Redis 缓存      │ ◄──── 仅 Leader 连接
-        │  - 连接 RabbitMQ        │
-        │  - 文件复制协调         │
-        └────────┬────────────────┘
-                 │
-        ┌────────┴────────┐
-        │                 │
-   ┌────▼────┐       ┌────▼────┐
-   │ Node 1  │       │ Node 2  │  ◄──── Follower 节点
-   │ (副本)  │       │ (副本)  │        - 接收文件复制
-   └─────────┘       └─────────┘        - 保持元数据同步
-        │                 │
-        └────────┬────────┘
-                 │
-        ┌────────▼────────┐
-        │  PostgreSQL DB  │  ◄──── 每个节点独立数据库
-        │  - 文件元数据    │        - 元数据自动同步
-        │  - 存储节点信息  │
-        └─────────────────┘
-```
+### Upload Service
 
-### 文件上传流程
+For Upload, the client will send a request to leader node, and the leader node will handle the request and broadcast the request to other nodes. The leader node will choose 3 nodes(include itself) to store the file and its metadata.  Then the leader will broadcast the metadata to other nodes who don't store the file. By this way, the file will be stored in 3 nodes and the metadata will be stored in all nodes.
 
-```
-1. 客户端 → RabbitMQ: 发送上传元数据请求 (file_name, file_size)
-2. Leader → 客户端: 返回 TCP 上传地址和临时令牌
-3. 客户端 → Leader TCP: 发送令牌 + 文件内容
-4. Leader: 保存文件到本地存储
-5. Leader → 数据库: 写入文件元数据
-6. Leader → Follower: 复制文件到其他节点 (默认2个副本)
-7. Leader → 数据库: 更新存储节点列表
-8. 所有节点: 元数据自动同步到所有数据库
-```
+### Download Service
 
-### 文件查询流程
+For Download, the client will send a request to leader node, and the leader node will find the fastest node(to download) and the leader node will send the request to the fastest node. The fastest node will send the file to the client.
 
-```
-1. 客户端 → RabbitMQ: 发送查询请求 (file_name)
-2. Leader → Redis: 尝试从缓存获取元数据
-   ├─ 缓存命中 → 直接返回 (毫秒级响应)
-   └─ 缓存未命中 → 查询数据库
-3. Leader → PostgreSQL: 查询文件元数据
-4. Leader → Redis: 写入缓存 (TTL: 1小时)
-5. Leader → 客户端: 返回文件元数据 (file_name, size, storage_nodes...)
-```
+### Delete Service
 
-## 数据模型
+For Delete, the leader node will delete the file and its metadata from all nodes. The nodes who has the file will also delete the file. This was done by broadcast the delete request to all nodes. And the nodes who has the file is searched by metadata.
 
-### 文件元数据表 (files)
+### Query Service
 
-```sql
-CREATE TABLE files (
-    id            BIGSERIAL PRIMARY KEY,
-    file_name     VARCHAR(255) NOT NULL,
-    file_size     BIGINT NOT NULL,
-    local_path    VARCHAR(500),           -- 本地存储路径（NULL表示无文件，仅元数据）
-    storage_nodes TEXT,                   -- 存储节点列表，逗号分隔（如 "node-0,node-2"）
-    storage_add   VARCHAR(500),           -- 文件目录树路径
-    owner_id      VARCHAR(100),
-    created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at    TIMESTAMP DEFAULT NOW()
-);
-```
+This part We used redis. If you send a query request, the leader node will first check the redis. If it has this file's metadata, it will return the metadata. Otherwise, it will broadcast the query request to all nodes. Then after get the metadata, Leader node will put the metadata into redis and return the metadata to client.
 
-### Redis 缓存键
+### Update Service
 
-- **文件元数据**: `file_meta:{file_name}` → `QueryMetaDataReply` (TTL: 1h)
+For Update, the leader node will update the file and its metadata from all nodes. The leader node will broadcast the update request to all nodes. And the nodes who has the file is searched by metadata too.
 
-## API 说明
+## Technology Stack
 
-### 文件上传
+- Go 1.22.2
+- Docker 25.0.1
+- PostgreSQL 16.2
+- Redis 7.2.6
+- RabbitMQ 3.12.1
 
-**请求** (RabbitMQ Queue: `file.upload`)
-```json
-{
-  "operation": "upload_file",
-  "client_ip": "192.168.1.100",
-  "file_name": "example.txt",
-  "file_size": 1024
-}
-```
+Go is the main part of this system.
 
-**响应**
-```json
-{
-  "ok": true,
-  "upload_addr": "localhost:30001",
-  "token": "uuid-token-here"
-}
-```
+Docker is used to run the system and initialize the database. It is also the entry of the system.
 
-### 文件查询
+PostgreSQL is used to store metadata.Each node has a PostgreSQL node.
 
-**请求** (RabbitMQ Queue: `file.query`)
-```json
-{
-  "operation": "query",
-  "file_name": "example.txt"
-}
-```
+Redis is used to store metadata temporarily.
 
-**响应**
-```json
-{
-  "ok": true,
-  "file_name": "example.txt",
-  "file_size": 1024,
-  "created_at": "2025-12-21 10:30:00",
-  "file_addr": "node-0,node-2",
-  "file_tree": "1-2-3"
-}
-```
+RabbitMQ is used to communicate with leader node.
 
-## 开发指南
-
-### 编译
-
-```powershell
-# 编译所有程序
-go build -o bin/node.exe ./cmd/node
-go build -o bin/client.exe ./cmd/client
-
-# 仅编译节点程序
-go build -o bin/node.exe ./cmd/node
-```
-
-### 本地开发
-
-```powershell
-# 启动单个节点（需要先启动中间件）
-go run ./cmd/node -id node-0 -addr localhost:29001 -me 0 `
-  -peers "localhost:29002,localhost:29003" `
-  -db-dsn "host=localhost port=20000 user=postgres dbname=driver sslmode=disable" `
-  -redis-addr "localhost:6379" `
-  -rabbitmq-url "amqp://guest:guest@localhost:5672/"
-```
-
-### 客户端使用
-
-```powershell
-# 上传文件
-.\bin\client.exe upload .\test.txt `
-  -amqp "amqp://guest:guest@localhost:5672/" `
-  -queue "file.upload"
-```
-
-## 监控与运维
-
-### 健康检查端点
-
-- `http://localhost:9081/health` - 健康检查
-- `http://localhost:9081/status` - 节点状态 (term, isLeader)
-- `http://localhost:9081/metrics` - 心跳指标
-
-### 日志查看
-
-```powershell
-# 查看所有节点日志
-docker-compose logs -f
-
-# 查看单个节点日志
-docker-compose logs -f node-0
-
-# 查看最近 50 条日志
-docker-compose logs --tail=50 node-0
-```
-
-### 常见问题排查
-
-查看 [docker/TROUBLESHOOTING.md](docker/TROUBLESHOOTING.md)
-
-## 测试
-
-### 集成测试覆盖
-
-- ✅ 文件上传与复制
-- ✅ 文件查询（含缓存）
-- ✅ 元数据同步验证
-- ✅ Leader 切换测试
-- ✅ 网络分区恢复
-
-### 测试命令
-
-```powershell
-# 运行所有测试
-go test -v ./tests
-
-# 运行特定测试
-go test -v ./tests -run TestFileUploadIntegration
-go test -v ./tests -run TestFileQueryIntegration
-go test -v ./tests -run TestMetadataSyncToAllNodes
-```
-
-详细测试说明参见 [tests/README.md](tests/README.md)
-
-## 贡献指南
-
-欢迎提交 Issue 和 Pull Request！
-
-## 许可证
-
-MIT License
+RabbitMQ and Redis is only used by leader node.These two docker image will check which node is leader and only provide service to leader node.

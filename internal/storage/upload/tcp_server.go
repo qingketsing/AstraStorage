@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"multi_driver/internal/core/replication"
 	"multi_driver/internal/db"
@@ -39,7 +40,7 @@ func StartTCPUploadServer(listenIP string, uploadPort int, token string, ttl tim
 
 	go func() {
 		defer listener.Close()
-		
+
 		// 设置 Deadline，防止永久阻塞
 		if tcpListener, ok := listener.(*net.TCPListener); ok {
 			_ = tcpListener.SetDeadline(time.Now().Add(ttl))
