@@ -71,6 +71,7 @@ type Node struct {
 	// 资源状态 (从 HeartbeatPayload 同步)
 	CPUUsage        float64 `json:"cpu_usage"`
 	MemoryUsage     uint64  `json:"memory_usage"`
+	DiskTotal       uint64  `json:"disk_total"` // 磁盘总空间
 	DiskFree        uint64  `json:"disk_free"`
 	ActiveUploads   int     `json:"active_uploads"`
 	ActiveDownloads int     `json:"active_downloads"`
@@ -237,6 +238,7 @@ func (dm *DiscoveryManager) handleHeartbeat(w http.ResponseWriter, r *http.Reque
 		// 更新资源状态
 		node.CPUUsage = payload.CPUUsage
 		node.MemoryUsage = payload.MemoryUsage
+		node.DiskTotal = payload.DiskTotal
 		node.DiskFree = payload.DiskFree
 		node.ActiveUploads = payload.ActiveUploads
 		node.ActiveDownloads = payload.ActiveDownloads
@@ -252,13 +254,14 @@ func (dm *DiscoveryManager) handleHeartbeat(w http.ResponseWriter, r *http.Reque
 			Heartbeat:       payload.Timestamp,
 			CPUUsage:        payload.CPUUsage,
 			MemoryUsage:     payload.MemoryUsage,
+			DiskTotal:       payload.DiskTotal,
 			DiskFree:        payload.DiskFree,
 			ActiveUploads:   payload.ActiveUploads,
 			ActiveDownloads: payload.ActiveDownloads,
 			BandwidthUsed:   payload.BandwidthUsed,
 		}
 		dm.nodes[payload.NodeID] = newNode
-		log.Printf("[%s] Unknown node heartbeat, adding: %s", dm.selfID, payload.NodeID)
+		log.Printf("[%s] Unknown node heartbeat, adding: %s (Disk: %d/%d)", dm.selfID, payload.NodeID, payload.DiskFree, payload.DiskTotal)
 	}
 }
 

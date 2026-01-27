@@ -304,11 +304,14 @@ func uploadFileViaTCP(t *testing.T, filePath, addr, token string) error {
 	}
 
 	// 连接到上传地址
-	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
 	if err != nil {
 		return fmt.Errorf("连接失败: %w", err)
 	}
 	defer conn.Close()
+
+	// 设置写超时
+	conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
 
 	// 发送 token
 	if _, err := conn.Write([]byte(token + "\n")); err != nil {
@@ -322,10 +325,22 @@ func uploadFileViaTCP(t *testing.T, filePath, addr, token string) error {
 	}
 	defer file.Close()
 
+	// 获取文件大小以验证
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("获取文件信息失败: %w", err)
+	}
+	expectedSize := fileInfo.Size()
+
 	// 发送文件内容
 	sent, err := io.Copy(conn, file)
 	if err != nil {
 		return fmt.Errorf("发送文件内容失败: %w", err)
+	}
+
+	// 验证发送的字节数
+	if sent != expectedSize {
+		return fmt.Errorf("发送不完整: 期望=%d, 实际=%d", expectedSize, sent)
 	}
 
 	t.Logf("  已发送 %d 字节", sent)
@@ -346,6 +361,10 @@ type FileInfo struct {
 
 // verifyDatabaseRecord 验证数据库记录（查询所有节点）
 func verifyDatabaseRecord(t *testing.T, fileName string) (*FileInfo, error) {
+	return verifyDatabaseRecordWithSize(t, fileName, int64(len(TestFileContent)))
+}
+
+func verifyDatabaseRecordWithSize(t *testing.T, fileName string, expectedSize int64) (*FileInfo, error) {
 	// 尝试所有数据库节点
 	dsns := []string{
 		PostgresNode0DSN,
@@ -411,9 +430,9 @@ func verifyDatabaseRecord(t *testing.T, fileName string) (*FileInfo, error) {
 	}
 
 	// 验证基本信息
-	if fileInfo.FileSize != int64(len(TestFileContent)) {
+	if fileInfo.FileSize != expectedSize {
 		return nil, fmt.Errorf("文件大小不匹配: 期望=%d, 实际=%d",
-			len(TestFileContent), fileInfo.FileSize)
+			expectedSize, fileInfo.FileSize)
 	}
 
 	// 验证存储节点

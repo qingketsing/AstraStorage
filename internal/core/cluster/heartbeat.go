@@ -31,6 +31,7 @@ type HeartbeatPayload struct {
 	// 资源状态
 	CPUUsage        float64 `json:"cpu_usage"`        // CPU 使用率百分比
 	MemoryUsage     uint64  `json:"memory_usage"`     // 内存使用量 (bytes)
+	DiskTotal       uint64  `json:"disk_total"`       // 磁盘总空间 (bytes) - 固定配额
 	DiskFree        uint64  `json:"disk_free"`        // 磁盘剩余空间 (bytes)
 	ActiveUploads   int     `json:"active_uploads"`   // 当前正在进行的上传任务数
 	ActiveDownloads int     `json:"active_downloads"` // 当前正在进行的下载任务数
@@ -124,10 +125,40 @@ func (hm *HeartbeatMonitor) CollectStats() HeartbeatPayload {
 	}
 
 	// 磁盘剩余空间
+	// 需求：强制限制每个节点可用存储空间为 50GB
+	const NodeStorageQuota = 50 * 1024 * 1024 * 1024 // 50GB
+	diskTotal := uint64(NodeStorageQuota)
 	diskFree := uint64(0)
+
 	root := hm.diskRoot()
 	if du, err := disk.Usage(root); err == nil {
-		diskFree = du.Free
+		// du.Used 是整个分区的已用空间，包括操作系统和其他文件
+		// 但由于我们在 Docker 中，或者没有更好的隔离方法，我们假设 Used 就是我们要计算的
+		// 更好的方法是统计实际数据目录的大小，但性能开销大。
+		// 这里采用简化的配额逻辑：
+		// Free = Quota - Used (如果小于0则为0)
+		// 注意：如果节点上还有其他大文件，这会吃掉 Quota。
+
+		// 修正：在 Docker 容器 OverlayFS 中，du.Used 反映的是底层文件系统的使用情况
+		// 如果宿主机的磁盘快满了，这里也会反映出来。
+		// 我们的目标是 "固定可用 50GB"，即表现得像一个 50GB 的盘。
+
+		// 逻辑：
+		// 1. 获取物理已用空间 du.Used
+		// 2. 如果 du.Used > Quota, 则 Free = 0
+		// 3. 否则 Free = Quota - du.Used
+		// (这假设我们是从 0 开始用的，或者愿意把已有数据计入 Quota)
+
+		used := du.Used
+		if used >= NodeStorageQuota {
+			diskFree = 0
+		} else {
+			diskFree = NodeStorageQuota - used
+		}
+	} else {
+		// 获取失败，保守设为 0 或者全部
+		// 设为 0 以避免被调度
+		diskFree = 0
 	}
 
 	// 带宽使用（Mbps）= (Δbytes * 8) / Δ秒 / 1e6
@@ -163,6 +194,7 @@ func (hm *HeartbeatMonitor) CollectStats() HeartbeatPayload {
 			Timestamp:       now.UnixNano(),
 			CPUUsage:        cpuPercent,
 			MemoryUsage:     memUsed,
+			DiskTotal:       diskTotal,
 			DiskFree:        diskFree,
 			ActiveUploads:   activeUp,
 			ActiveDownloads: activeDown,
@@ -183,6 +215,7 @@ func (hm *HeartbeatMonitor) CollectStats() HeartbeatPayload {
 		Timestamp:       time.Now().UnixNano(),
 		CPUUsage:        cpuPercent,
 		MemoryUsage:     memUsed,
+		DiskTotal:       diskTotal,
 		DiskFree:        diskFree,
 		ActiveUploads:   activeUp,
 		ActiveDownloads: activeDown,

@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -448,6 +449,7 @@ func handleNewFileUpdate(ctx *UpdateContext, sess UpdateSession, filePath string
 
 	// 保存文件信息到数据库
 	var fileID int64
+	var storageNodesStr string
 	if node.DB != nil {
 		fileInfo := db.FileUploadInfo{
 			FileName:     sess.FileName,
@@ -473,12 +475,13 @@ func handleNewFileUpdate(ctx *UpdateContext, sess UpdateSession, filePath string
 		successNodes, err := node.ReplicationMgr.ReplicateFile(filePath, sess.FileName, fileSize)
 		if err != nil {
 			log.Printf("[Update][%s] file replication failed: %v", ctx.NodeID, err)
+			storageNodesStr = ctx.NodeID
 		} else {
 			log.Printf("[Update][%s] file replicated to %d nodes: %v", ctx.NodeID, len(successNodes), successNodes)
 
 			// 更新数据库中的 storage_nodes 字段
 			if node.DB != nil && fileID > 0 {
-				storageNodesStr := strings.Join(successNodes, ",")
+				storageNodesStr = strings.Join(successNodes, ",")
 				if err := node.DB.UpdateFileStorageNodes(fileID, storageNodesStr); err != nil {
 					log.Printf("[Update][%s] update storage nodes failed: %v", ctx.NodeID, err)
 				} else {
@@ -494,6 +497,55 @@ func handleNewFileUpdate(ctx *UpdateContext, sess UpdateSession, filePath string
 				}
 			}
 		}
+	} else {
+		storageNodesStr = ctx.NodeID
+	}
+
+	// 同步更新 Redis 缓存（新文件上传）
+	if node.RedisManager != nil {
+		redisClient := node.RedisManager.GetClient()
+		if redisClient != nil {
+			redisKey := "file:" + sess.FileName
+			
+			// 检查 Redis 中是否有相关数据
+			existingData, err := redisClient.Get(redisKey)
+			if err != nil && err.Error() != "redis: nil" {
+				log.Printf("[Update][%s] redis get failed: %v", ctx.NodeID, err)
+			}
+			
+			// 构建要存储的文件信息（JSON格式）
+			fileData := map[string]interface{}{
+				"file_name":     sess.FileName,
+				"file_size":     fileSize,
+				"storage_nodes": storageNodesStr,
+				"local_path":    filePath,
+				"owner_id":      sess.ClientIP,
+				"created_at":    time.Now().Format(time.RFC3339),
+			}
+			
+			fileJSON, err := json.Marshal(fileData)
+			if err != nil {
+				log.Printf("[Update][%s] marshal file data for redis failed: %v", ctx.NodeID, err)
+			} else {
+				// 如果 Redis 中有数据，更新；如果没有，写入新数据
+				if existingData != "" {
+					log.Printf("[Update][%s] updating existing redis cache for new file: %s", ctx.NodeID, sess.FileName)
+				} else {
+					log.Printf("[Update][%s] writing new redis cache for new file: %s", ctx.NodeID, sess.FileName)
+				}
+				
+				// 设置缓存，过期时间为1小时
+				if err := redisClient.Set(redisKey, string(fileJSON), time.Hour); err != nil {
+					log.Printf("[Update][%s] redis set failed: %v", ctx.NodeID, err)
+				} else {
+					log.Printf("[Update][%s] redis cache synced successfully for new file: %s", ctx.NodeID, sess.FileName)
+				}
+			}
+		} else {
+			log.Printf("[Update][%s] redis client not available (node may not be leader)", ctx.NodeID)
+		}
+	} else {
+		log.Printf("[Update][%s] redis manager not configured", ctx.NodeID)
 	}
 
 	return nil
@@ -587,6 +639,52 @@ func handleExistingFileUpdate(ctx *UpdateContext, sess UpdateSession, filePath s
 		log.Printf("[Update][%s] metadata update broadcast failed: %v", ctx.NodeID, err)
 	} else {
 		log.Printf("[Update][%s] metadata update broadcast completed", ctx.NodeID)
+	}
+
+	// 同步更新 Redis 缓存
+	if node.RedisManager != nil {
+		redisClient := node.RedisManager.GetClient()
+		if redisClient != nil {
+			redisKey := "file:" + sess.FileName
+			
+			// 检查 Redis 中是否有相关数据
+			existingData, err := redisClient.Get(redisKey)
+			if err != nil && err.Error() != "redis: nil" {
+				log.Printf("[Update][%s] redis get failed: %v", ctx.NodeID, err)
+			}
+			
+			// 构建要存储的文件信息（JSON格式）
+			fileData := map[string]interface{}{
+				"file_name":     sess.FileName,
+				"file_size":     fileSize,
+				"storage_nodes": strings.Join(successNodes, ","),
+				"local_path":    filePath,
+				"updated_at":    time.Now().Format(time.RFC3339),
+			}
+			
+			fileJSON, err := json.Marshal(fileData)
+			if err != nil {
+				log.Printf("[Update][%s] marshal file data for redis failed: %v", ctx.NodeID, err)
+			} else {
+				// 如果 Redis 中有数据，更新；如果没有，写入新数据
+				if existingData != "" {
+					log.Printf("[Update][%s] updating existing redis cache for file: %s", ctx.NodeID, sess.FileName)
+				} else {
+					log.Printf("[Update][%s] writing new redis cache for file: %s", ctx.NodeID, sess.FileName)
+				}
+				
+				// 设置缓存，过期时间为1小时
+				if err := redisClient.Set(redisKey, string(fileJSON), time.Hour); err != nil {
+					log.Printf("[Update][%s] redis set failed: %v", ctx.NodeID, err)
+				} else {
+					log.Printf("[Update][%s] redis cache synced successfully for file: %s", ctx.NodeID, sess.FileName)
+				}
+			}
+		} else {
+			log.Printf("[Update][%s] redis client not available (node may not be leader)", ctx.NodeID)
+		}
+	} else {
+		log.Printf("[Update][%s] redis manager not configured", ctx.NodeID)
 	}
 
 	// 删除备份文件
@@ -706,13 +804,21 @@ func sendMetadataUpdateToNode(node interface{}, fileName string, fileSize int64,
 		nodeAddr = n.Address
 	default:
 		// 尝试从 cluster.Node 获取地址
-		type ClusterNode interface {
-			GetAddress() string
+		// cluster.Node 有 Address 字段，使用反射获取
+		v := reflect.ValueOf(node)
+		if v.Kind() == reflect.Ptr {
+			v = v.Elem()
 		}
-		if cn, ok := node.(ClusterNode); ok {
-			nodeAddr = cn.GetAddress()
+		
+		if v.Kind() == reflect.Struct {
+			addrField := v.FieldByName("Address")
+			if addrField.IsValid() && addrField.Kind() == reflect.String {
+				nodeAddr = addrField.String()
+			} else {
+				return fmt.Errorf("unsupported node type: %T (no Address field)", node)
+			}
 		} else {
-			return fmt.Errorf("unsupported node type")
+			return fmt.Errorf("unsupported node type: %T", node)
 		}
 	}
 

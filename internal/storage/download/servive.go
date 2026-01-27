@@ -224,7 +224,7 @@ func handleDownloadMetaMessage(node *integration.Node, ch *amqp.Channel, d *amqp
 	if selectedNode.ID == node.ID {
 		// 在自己节点上启动 TCP 下载服务器
 		globalDownloadTokenStore.Put(token, sess)
-		downloadAddr, err := StartTCPDownloadServer("0.0.0.0", downloadPort, token, 5*time.Minute)
+		downloadAddr, err = StartTCPDownloadServer("0.0.0.0", downloadPort, token, 5*time.Minute)
 		if err != nil {
 			log.Printf("[%s] start TCP download server failed: %v", node.ID, err)
 			replyDownloadError(ch, d, "start tcp download server failed: "+err.Error())

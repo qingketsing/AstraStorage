@@ -107,7 +107,7 @@ func testFileUploadDownload(t *testing.T, fileName string, fileSize int64) {
 
 	// 步骤6：验证数据库记录
 	t.Log("\n[步骤6] 验证数据库记录...")
-	fileInfo, err := verifyDatabaseRecord(t, fileName)
+	fileInfo, err := verifyDatabaseRecordWithSize(t, fileName, fileSize)
 	if err != nil {
 		t.Fatalf("数据库验证失败: %v", err)
 	}

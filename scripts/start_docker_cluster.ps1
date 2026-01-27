@@ -61,20 +61,47 @@ if (-not (Test-Path "docker-compose.yml")) {
 Write-Host "Cleaning up existing containers..." -ForegroundColor Yellow
 try {
     & $dockerComposeCmd down -v 2>&1 | Out-Null
+    Start-Sleep -Seconds 3
 } catch {
     Write-Host "Warning: Cleanup encountered issues (this is usually ok)" -ForegroundColor Yellow
 }
 
 # Build and start containers
 Write-Host "Building Docker images..." -ForegroundColor Cyan
-& $dockerComposeCmd build
+& $dockerComposeCmd build --no-cache
 
-Write-Host "`nStarting cluster nodes..." -ForegroundColor Cyan
+Write-Host "`nStarting infrastructure services (Redis, RabbitMQ, PostgreSQL)..." -ForegroundColor Cyan
+& $dockerComposeCmd up -d redis rabbitmq postgres-0 postgres-1 postgres-2 postgres-3 postgres-4
+
+Write-Host "`nWaiting for infrastructure to be healthy (60 seconds)..." -ForegroundColor Yellow
+$maxWait = 60
+$waited = 0
+while ($waited -lt $maxWait) {
+    Start-Sleep -Seconds 5
+    $waited += 5
+    $healthyCount = 0
+    try {
+        $services = @("redis", "rabbitmq", "postgres-0", "postgres-1", "postgres-2", "postgres-3", "postgres-4")
+        foreach ($service in $services) {
+            $health = docker inspect --format='{{.State.Health.Status}}' $service 2>$null
+            if ($health -eq "healthy" -or $health -eq "") {
+                $healthyCount++
+            }
+        }
+        if ($healthyCount -eq $services.Count) {
+            Write-Host "All infrastructure services are ready!" -ForegroundColor Green
+            break
+        }
+    } catch {}
+    Write-Host "Waiting... ($waited/$maxWait seconds, $healthyCount/7 services ready)" -ForegroundColor Gray
+}
+
+Write-Host "`nStarting application nodes..." -ForegroundColor Cyan
 & $dockerComposeCmd up -d
 
-# Wait for containers to start
-Write-Host "`nWaiting for nodes to start..." -ForegroundColor Yellow
-Start-Sleep -Seconds 8
+# Wait for application nodes to stabilize
+Write-Host "`nWaiting for application nodes to stabilize (15 seconds)..." -ForegroundColor Yellow
+Start-Sleep -Seconds 15
 
 # Check container status
 Write-Host "`nContainer Status:" -ForegroundColor Cyan

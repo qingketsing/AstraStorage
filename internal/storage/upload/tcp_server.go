@@ -101,9 +101,15 @@ func handleSingleUpload(conn net.Conn, expectedToken string, ctx *UploadContext)
 	limitReader := io.LimitReader(reader, sess.FileSize)
 	written, err := io.Copy(file, limitReader)
 	if err != nil {
+		// 上传失败，删除部分文件
+		file.Close()
+		os.Remove(filePath)
 		return fmt.Errorf("receive file data failed: %w", err)
 	}
 	if written != sess.FileSize {
+		// 上传不完整，删除部分文件
+		file.Close()
+		os.Remove(filePath)
 		return fmt.Errorf("incomplete upload: expect=%d, got=%d", sess.FileSize, written)
 	}
 

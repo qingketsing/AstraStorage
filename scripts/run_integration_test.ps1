@@ -1,15 +1,13 @@
-# 文件上传集成测试脚本
-# 自动启动集群、运行测试、清理环境
-
+﻿# 鏂囦欢涓婁紶闆嗘垚娴嬭瘯鑴氭湰
+# 鑷姩鍚姩闆嗙兢銆佽繍琛屾祴璇曘€佹竻鐞嗙幆澧?
 param(
-    [switch]$SkipClusterStart,  # 跳过集群启动（如果已经运行）
-    [switch]$KeepCluster,       # 测试后保持集群运行
-    [switch]$Verbose            # 显示详细日志
+    [switch]$SkipClusterStart,  # 璺宠繃闆嗙兢鍚姩锛堝鏋滃凡缁忚繍琛岋級
+    [switch]$KeepCluster,       # 娴嬭瘯鍚庝繚鎸侀泦缇よ繍琛?    [switch]$Verbose            # 鏄剧ず璇︾粏鏃ュ織
 )
 
 $ErrorActionPreference = "Stop"
 
-# 颜色输出函数
+# 棰滆壊杈撳嚭鍑芥暟
 function Write-ColorOutput {
     param(
         [string]$Message,
@@ -18,12 +16,12 @@ function Write-ColorOutput {
     Write-Host $Message -ForegroundColor $Color
 }
 
-function Write-Success { param([string]$Message) Write-ColorOutput "✓ $Message" "Green" }
-function Write-Error { param([string]$Message) Write-ColorOutput "✗ $Message" "Red" }
-function Write-Info { param([string]$Message) Write-ColorOutput "ℹ $Message" "Cyan" }
+function Write-Success { param([string]$Message) Write-ColorOutput "鉁?$Message" "Green" }
+function Write-Error { param([string]$Message) Write-ColorOutput "鉁?$Message" "Red" }
+function Write-Info { param([string]$Message) Write-ColorOutput "鈩?$Message" "Cyan" }
 function Write-Step { param([string]$Message) Write-ColorOutput "`n=== $Message ===" "Yellow" }
 
-# 检查 Docker 是否运行
+# 妫€鏌?Docker 鏄惁杩愯
 function Test-DockerRunning {
     try {
         docker ps | Out-Null
@@ -33,8 +31,7 @@ function Test-DockerRunning {
     }
 }
 
-# 检查集群是否运行
-function Test-ClusterRunning {
+# 妫€鏌ラ泦缇ゆ槸鍚﹁繍琛?function Test-ClusterRunning {
     try {
         $containers = docker-compose ps -q
         if ($containers.Count -ge 5) {
@@ -46,73 +43,69 @@ function Test-ClusterRunning {
     }
 }
 
-# 主流程
-try {
+# 涓绘祦绋?try {
     Write-ColorOutput @"
 
-╔════════════════════════════════════════════════════════╗
-║     文件上传集成测试 - 自动化测试脚本                   ║
-╚════════════════════════════════════════════════════════╝
+鈺斺晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晽
+鈺?    鏂囦欢涓婁紶闆嗘垚娴嬭瘯 - 鑷姩鍖栨祴璇曡剼鏈?                  鈺?鈺氣晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨暆
 
 "@ "Cyan"
 
-    # 步骤1：检查 Docker
-    Write-Step "检查 Docker 环境"
+    # 姝ラ1锛氭鏌?Docker
+    Write-Step "妫€鏌?Docker 鐜"
     if (-not (Test-DockerRunning)) {
-        Write-Error "Docker Desktop 未运行"
-        Write-Info "请启动 Docker Desktop 后重试"
+        Write-Error "Docker Desktop 鏈繍琛?
+        Write-Info "璇峰惎鍔?Docker Desktop 鍚庨噸璇?
         exit 1
     }
-    Write-Success "Docker Desktop 正在运行"
+    Write-Success "Docker Desktop 姝ｅ湪杩愯"
 
-    # 步骤2：启动集群
-    if (-not $SkipClusterStart) {
-        Write-Step "启动 Docker 集群"
+    # 姝ラ2锛氬惎鍔ㄩ泦缇?    if (-not $SkipClusterStart) {
+        Write-Step "鍚姩 Docker 闆嗙兢"
         
         if (Test-ClusterRunning) {
-            Write-Info "检测到集群已在运行"
-            $response = Read-Host "是否重启集群？(y/N)"
+            Write-Info "妫€娴嬪埌闆嗙兢宸插湪杩愯"
+            $response = Read-Host "鏄惁閲嶅惎闆嗙兢锛?y/N)"
             if ($response -eq 'y' -or $response -eq 'Y') {
-                Write-Info "停止现有集群..."
+                Write-Info "鍋滄鐜版湁闆嗙兢..."
                 & ".\scripts\stop_docker_cluster.ps1"
                 Start-Sleep -Seconds 3
             } else {
-                Write-Success "使用现有集群"
+                Write-Success "浣跨敤鐜版湁闆嗙兢"
             }
         }
         
         if (-not (Test-ClusterRunning)) {
-            Write-Info "启动集群容器..."
+            Write-Info "鍚姩闆嗙兢瀹瑰櫒..."
             & ".\scripts\start_docker_cluster.ps1"
             
             if ($LASTEXITCODE -ne 0) {
-                Write-Error "集群启动失败"
+                Write-Error "闆嗙兢鍚姩澶辫触"
                 exit 1
             }
             
-            Write-Success "集群启动成功"
+            Write-Success "闆嗙兢鍚姩鎴愬姛"
             
-            # 等待集群就绪
-            Write-Info "等待集群初始化和 Leader 选举..."
+            # 绛夊緟闆嗙兢灏辩华
+            Write-Info "绛夊緟闆嗙兢鍒濆鍖栧拰 Leader 閫変妇..."
             for ($i = 30; $i -gt 0; $i--) {
-                Write-Host -NoNewline "`r  剩余时间: $i 秒   "
+                Write-Host -NoNewline "`r  鍓╀綑鏃堕棿: $i 绉?  "
                 Start-Sleep -Seconds 1
             }
             Write-Host ""
-            Write-Success "集群初始化完成"
+            Write-Success "闆嗙兢鍒濆鍖栧畬鎴?
         }
     } else {
-        Write-Step "跳过集群启动"
+        Write-Step "璺宠繃闆嗙兢鍚姩"
         if (-not (Test-ClusterRunning)) {
-            Write-Error "集群未运行，请先启动集群或移除 -SkipClusterStart 参数"
+            Write-Error "闆嗙兢鏈繍琛岋紝璇峰厛鍚姩闆嗙兢鎴栫Щ闄?-SkipClusterStart 鍙傛暟"
             exit 1
         }
-        Write-Success "检测到集群正在运行"
+        Write-Success "妫€娴嬪埌闆嗙兢姝ｅ湪杩愯"
     }
 
-    # 步骤3：验证集群状态
-    Write-Step "验证集群状态"
-    Write-Info "检查容器健康状态..."
+    # 姝ラ3锛氶獙璇侀泦缇ょ姸鎬?    Write-Step "楠岃瘉闆嗙兢鐘舵€?
+    Write-Info "妫€鏌ュ鍣ㄥ仴搴风姸鎬?.."
     
     $containers = @{
         "redis" = "Redis"
@@ -124,16 +117,15 @@ try {
     foreach ($container in $containers.Keys) {
         $status = docker inspect -f '{{.State.Status}}' $container 2>$null
         if ($status -eq "running") {
-            Write-Success "$($containers[$container]): 运行中"
+            Write-Success "$($containers[$container]): 杩愯涓?
         } else {
             Write-Error "$($containers[$container]): $status"
         }
     }
 
-    # 步骤4：运行测试
-    Write-Step "运行集成测试"
-    Write-Info "测试文件: tests/file_upload_test.go"
-    Write-Info "测试函数: TestFileUploadIntegration"
+    # 姝ラ4锛氳繍琛屾祴璇?    Write-Step "杩愯闆嗘垚娴嬭瘯"
+    Write-Info "娴嬭瘯鏂囦欢: tests/file_upload_test.go"
+    Write-Info "娴嬭瘯鍑芥暟: TestFileUploadIntegration"
     Write-Host ""
     
     $testArgs = @(
@@ -156,42 +148,42 @@ try {
     Write-Host ""
     
     if ($testExitCode -eq 0) {
-        Write-Step "测试结果"
-        Write-Success "所有测试通过！ 🎉"
+        Write-Step "娴嬭瘯缁撴灉"
+        Write-Success "鎵€鏈夋祴璇曢€氳繃锛?馃帀"
     } else {
-        Write-Step "测试结果"
-        Write-Error "测试失败，请查看上面的错误信息"
+        Write-Step "娴嬭瘯缁撴灉"
+        Write-Error "娴嬭瘯澶辫触锛岃鏌ョ湅涓婇潰鐨勯敊璇俊鎭?
     }
 
-    # 步骤5：清理或保持集群
+    # 姝ラ5锛氭竻鐞嗘垨淇濇寔闆嗙兢
     if ($testExitCode -eq 0 -and -not $KeepCluster) {
         Write-Host ""
-        $response = Read-Host "是否停止集群？(Y/n)"
+        $response = Read-Host "鏄惁鍋滄闆嗙兢锛?Y/n)"
         if ($response -ne 'n' -and $response -ne 'N') {
-            Write-Step "清理环境"
-            Write-Info "停止集群..."
+            Write-Step "娓呯悊鐜"
+            Write-Info "鍋滄闆嗙兢..."
             & ".\scripts\stop_docker_cluster.ps1"
-            Write-Success "集群已停止"
+            Write-Success "闆嗙兢宸插仠姝?
         } else {
-            Write-Info "集群保持运行状态"
-            Write-Info "手动停止: .\scripts\stop_docker_cluster.ps1"
+            Write-Info "闆嗙兢淇濇寔杩愯鐘舵€?
+            Write-Info "鎵嬪姩鍋滄: .\scripts\stop_docker_cluster.ps1"
         }
     } elseif ($KeepCluster) {
         Write-Host ""
-        Write-Info "集群保持运行状态（-KeepCluster）"
-        Write-Info "查看日志: .\scripts\view_docker_logs.ps1"
-        Write-Info "停止集群: .\scripts\stop_docker_cluster.ps1"
+        Write-Info "闆嗙兢淇濇寔杩愯鐘舵€侊紙-KeepCluster锛?
+        Write-Info "鏌ョ湅鏃ュ織: .\scripts\view_docker_logs.ps1"
+        Write-Info "鍋滄闆嗙兢: .\scripts\stop_docker_cluster.ps1"
     }
 
     Write-Host ""
-    Write-ColorOutput "════════════════════════════════════════════════════════" "Cyan"
+    Write-ColorOutput "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲" "Cyan"
     
     exit $testExitCode
 
 } catch {
     Write-Host ""
-    Write-Error "发生错误: $_"
-    Write-Info "详细错误信息："
+    Write-Error "鍙戠敓閿欒: $_"
+    Write-Info "璇︾粏閿欒淇℃伅锛?
     Write-Host $_.Exception.Message -ForegroundColor Red
     Write-Host $_.ScriptStackTrace -ForegroundColor DarkGray
     exit 1

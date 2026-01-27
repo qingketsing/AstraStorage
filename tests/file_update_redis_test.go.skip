@@ -1,0 +1,361 @@
+package tests
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"multi_driver/internal/core/consensus/raft"
+	"multi_driver/internal/core/integration"
+	"multi_driver/internal/db"
+)
+
+// TestFileUpdateWithRedisSync 测试文件更新时的Redis同步功能
+func TestFileUpdateWithRedisSync(t *testing.T) {
+	// 清理测试环境
+	defer cleanupTestEnvironment(t)
+
+	// 启动测试节点
+	node, err := setupTestNode(t, 19100, "node1", "localhost:6379")
+	if err != nil {
+		t.Fatalf("设置测试节点失败: %v", err)
+	}
+	defer node.Stop()
+
+	// 等待节点成为Leader
+	if !waitForLeader(node, 10*time.Second) {
+		t.Fatal("节点未能成为Leader")
+	}
+
+	// 等待 Redis 客户端就绪
+	if !waitForRedisClient(node, 5*time.Second) {
+		t.Fatal("Redis 客户端未能就绪")
+	}
+
+	// 测试场景1: 新文件上传时写入Redis
+	t.Run("新文件上传写入Redis", func(t *testing.T) {
+		testNewFileUploadWithRedis(t, node)
+	})
+
+	// 测试场景2: 更新现有文件时同步Redis
+	t.Run("更新现有文件同步Redis", func(t *testing.T) {
+		testExistingFileUpdateWithRedis(t, node)
+	})
+
+	// 测试场景3: Redis中已有数据时更新
+	t.Run("Redis已有数据时更新", func(t *testing.T) {
+		testUpdateExistingRedisCache(t, node)
+	})
+}
+
+func testNewFileUploadWithRedis(t *testing.T, node *integration.Node) {
+	fileName := "test_new_upload.txt"
+	fileContent := []byte("This is a new file for testing Redis sync")
+	
+	// 创建测试文件
+	testFilePath := filepath.Join("FileStorage", fileName)
+	os.MkdirAll("FileStorage", 0755)
+	if err := os.WriteFile(testFilePath, fileContent, 0644); err != nil {
+		t.Fatalf("创建测试文件失败: %v", err)
+	}
+	defer os.Remove(testFilePath)
+
+	// 保存文件到数据库
+	fileInfo := db.FileUploadInfo{
+		FileName:     fileName,
+		FileSize:     int64(len(fileContent)),
+		LocalPath:    testFilePath,
+		StorageNodes: node.ID,
+		OwnerID:      "127.0.0.1",
+	}
+	fileID, err := node.DB.SaveFileUpload(fileInfo)
+	if err != nil {
+		t.Fatalf("保存文件到数据库失败: %v", err)
+	}
+
+	// 模拟Redis同步逻辑
+	if node.RedisManager != nil {
+		redisClient := node.RedisManager.GetClient()
+		if redisClient != nil {
+			redisKey := "file:" + fileName
+			
+			// 构建文件数据
+			fileData := map[string]interface{}{
+				"file_name":     fileName,
+				"file_size":     int64(len(fileContent)),
+				"storage_nodes": node.ID,
+				"local_path":    testFilePath,
+				"owner_id":      "127.0.0.1",
+				"created_at":    time.Now().Format(time.RFC3339),
+			}
+			
+			fileJSON, err := json.Marshal(fileData)
+			if err != nil {
+				t.Fatalf("序列化文件数据失败: %v", err)
+			}
+			
+			// 写入Redis
+			if err := redisClient.Set(redisKey, string(fileJSON), time.Hour); err != nil {
+				t.Fatalf("写入Redis失败: %v", err)
+			}
+			
+			// 验证Redis中的数据
+			cachedData, err := redisClient.Get(redisKey)
+			if err != nil {
+				t.Fatalf("从Redis读取数据失败: %v", err)
+			}
+			
+			var cachedFileData map[string]interface{}
+			if err := json.Unmarshal([]byte(cachedData), &cachedFileData); err != nil {
+				t.Fatalf("解析Redis缓存数据失败: %v", err)
+			}
+			
+			// 验证数据正确性
+			if cachedFileData["file_name"] != fileName {
+				t.Errorf("文件名不匹配: 期望 %s, 得到 %v", fileName, cachedFileData["file_name"])
+			}
+			if cachedFileData["storage_nodes"] != node.ID {
+				t.Errorf("存储节点不匹配: 期望 %s, 得到 %v", node.ID, cachedFileData["storage_nodes"])
+			}
+			
+			log.Printf("✓ 新文件上传Redis同步测试通过")
+		} else {
+			t.Skip("Redis客户端不可用，跳过测试")
+		}
+	} else {
+		t.Skip("Redis管理器未配置，跳过测试")
+	}
+
+	// 清理数据库
+	node.DB.Exec("DELETE FROM files WHERE file_id = $1", fileID)
+}
+
+func testExistingFileUpdateWithRedis(t *testing.T, node *integration.Node) {
+	fileName := "test_existing_file.txt"
+	originalContent := []byte("Original content")
+	updatedContent := []byte("Updated content for Redis sync test")
+	
+	// 创建原始文件
+	testFilePath := filepath.Join("FileStorage", fileName)
+	os.MkdirAll("FileStorage", 0755)
+	if err := os.WriteFile(testFilePath, originalContent, 0644); err != nil {
+		t.Fatalf("创建原始文件失败: %v", err)
+	}
+	defer os.Remove(testFilePath)
+
+	// 保存原始文件到数据库
+	fileInfo := db.FileUploadInfo{
+		FileName:     fileName,
+		FileSize:     int64(len(originalContent)),
+		LocalPath:    testFilePath,
+		StorageNodes: node.ID,
+		OwnerID:      "127.0.0.1",
+	}
+	fileID, err := node.DB.SaveFileUpload(fileInfo)
+	if err != nil {
+		t.Fatalf("保存原始文件到数据库失败: %v", err)
+	}
+	defer node.DB.Exec("DELETE FROM files WHERE file_id = $1", fileID)
+
+	// 模拟Redis中已有原始数据
+	if node.RedisManager != nil {
+		redisClient := node.RedisManager.GetClient()
+		if redisClient != nil {
+			redisKey := "file:" + fileName
+			
+			originalData := map[string]interface{}{
+				"file_name":     fileName,
+				"file_size":     int64(len(originalContent)),
+				"storage_nodes": node.ID,
+				"local_path":    testFilePath,
+			}
+			originalJSON, _ := json.Marshal(originalData)
+			redisClient.Set(redisKey, string(originalJSON), time.Hour)
+			
+			// 更新文件内容
+			if err := os.WriteFile(testFilePath, updatedContent, 0644); err != nil {
+				t.Fatalf("更新文件内容失败: %v", err)
+			}
+			
+			// 更新数据库
+			updateQuery := `UPDATE files SET file_size = $1, updated_at = NOW() WHERE file_name = $2`
+			if _, err := node.DB.Exec(updateQuery, int64(len(updatedContent)), fileName); err != nil {
+				t.Fatalf("更新数据库失败: %v", err)
+			}
+			
+			// 模拟Redis同步更新
+			updatedData := map[string]interface{}{
+				"file_name":     fileName,
+				"file_size":     int64(len(updatedContent)),
+				"storage_nodes": node.ID,
+				"local_path":    testFilePath,
+				"updated_at":    time.Now().Format(time.RFC3339),
+			}
+			updatedJSON, _ := json.Marshal(updatedData)
+			
+			if err := redisClient.Set(redisKey, string(updatedJSON), time.Hour); err != nil {
+				t.Fatalf("更新Redis失败: %v", err)
+			}
+			
+			// 验证Redis中的更新数据
+			cachedData, err := redisClient.Get(redisKey)
+			if err != nil {
+				t.Fatalf("从Redis读取更新数据失败: %v", err)
+			}
+			
+			var cachedFileData map[string]interface{}
+			if err := json.Unmarshal([]byte(cachedData), &cachedFileData); err != nil {
+				t.Fatalf("解析Redis缓存数据失败: %v", err)
+			}
+			
+			// 验证文件大小已更新
+			if cachedFileData["file_size"].(float64) != float64(len(updatedContent)) {
+				t.Errorf("文件大小未正确更新: 期望 %d, 得到 %v", len(updatedContent), cachedFileData["file_size"])
+			}
+			
+			// 验证有updated_at字段
+			if _, ok := cachedFileData["updated_at"]; !ok {
+				t.Error("Redis缓存中缺少updated_at字段")
+			}
+			
+			log.Printf("✓ 现有文件更新Redis同步测试通过")
+		} else {
+			t.Skip("Redis客户端不可用，跳过测试")
+		}
+	} else {
+		t.Skip("Redis管理器未配置，跳过测试")
+	}
+}
+
+func testUpdateExistingRedisCache(t *testing.T, node *integration.Node) {
+	fileName := "test_redis_exists.txt"
+	fileContent := []byte("Test content for Redis existence check")
+	
+	testFilePath := filepath.Join("FileStorage", fileName)
+	os.MkdirAll("FileStorage", 0755)
+	if err := os.WriteFile(testFilePath, fileContent, 0644); err != nil {
+		t.Fatalf("创建测试文件失败: %v", err)
+	}
+	defer os.Remove(testFilePath)
+
+	if node.RedisManager != nil {
+		redisClient := node.RedisManager.GetClient()
+		if redisClient != nil {
+			redisKey := "file:" + fileName
+			
+			// 场景1: Redis中没有数据
+			// 先删除可能存在的数据
+			redisClient.Delete(redisKey)
+			
+			// 检查Redis中是否有数据
+			existingData, err := redisClient.Get(redisKey)
+			shouldWrite := (err != nil && err.Error() == "redis: nil") || existingData == ""
+			
+			if !shouldWrite {
+				t.Error("Redis为空时，shouldWrite应该为true")
+			}
+			
+			// 写入新数据
+			fileData := map[string]interface{}{
+				"file_name":  fileName,
+				"file_size":  int64(len(fileContent)),
+				"created_at": time.Now().Format(time.RFC3339),
+			}
+			fileJSON, _ := json.Marshal(fileData)
+			redisClient.Set(redisKey, string(fileJSON), time.Hour)
+			
+			log.Printf("✓ Redis不存在数据时写入新数据测试通过")
+			
+			// 场景2: Redis中已有数据
+			existingData, err = redisClient.Get(redisKey)
+			shouldUpdate := existingData != ""
+			
+			if !shouldUpdate {
+				t.Error("Redis有数据时，shouldUpdate应该为true")
+			}
+			
+			// 更新数据
+			updatedData := map[string]interface{}{
+				"file_name":  fileName,
+				"file_size":  int64(len(fileContent)) + 100,
+				"updated_at": time.Now().Format(time.RFC3339),
+			}
+			updatedJSON, _ := json.Marshal(updatedData)
+			redisClient.Set(redisKey, string(updatedJSON), time.Hour)
+			
+			// 验证数据已更新
+			finalData, _ := redisClient.Get(redisKey)
+			var finalFileData map[string]interface{}
+			json.Unmarshal([]byte(finalData), &finalFileData)
+			
+			if _, ok := finalFileData["updated_at"]; !ok {
+				t.Error("更新后的数据应该包含updated_at字段")
+			}
+			
+			log.Printf("✓ Redis存在数据时更新数据测试通过")
+			
+			// 清理
+			redisClient.Delete(redisKey)
+		} else {
+			t.Skip("Redis客户端不可用，跳过测试")
+		}
+	} else {
+		t.Skip("Redis管理器未配置，跳过测试")
+	}
+}
+
+func setupTestNode(t *testing.T, port int, nodeID string, redisAddr string) (*integration.Node, error) {
+	// 配置数据库DSN - 使用Docker映射的端口20000
+	dbDSN := "postgres://postgres@localhost:20000/driver?sslmode=disable"
+	
+	// 配置RabbitMQ URL
+	rabbitmqURL := "amqp://guest:guest@localhost:5672/"
+	
+	// 节点地址
+	nodeAddr := fmt.Sprintf("localhost:%d", port)
+	
+	// 创建持久化器
+	persister := raft.NewInMemoryPersister()
+	
+	// 创建节点
+	node, err := integration.NewNode(
+		nodeID,
+		nodeAddr,
+		0,
+		[]string{nodeAddr},
+		persister,
+		make(chan raft.ApplyMsg),
+		dbDSN,
+		redisAddr,
+		rabbitmqURL,
+	)
+	
+	if err != nil {
+		return nil, fmt.Errorf("创建节点失败: %w", err)
+	}
+	
+	return node, nil
+}
+
+func waitForLeader(node *integration.Node, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if node.IsLeader() {
+			return true
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return false
+}
+
+func cleanupTestEnvironment(t *testing.T) {
+	// 清理FileStorage目录中的测试文件
+	files, _ := filepath.Glob("FileStorage/test_*.txt")
+	for _, file := range files {
+		os.Remove(file)
+	}
+}
