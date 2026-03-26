@@ -1,0 +1,111 @@
+services:
+  redis-cache-master:
+    image: redis:7.2-alpine
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    ports:
+      - "6380:6379"
+    volumes:
+      - ./redis-cache-master.conf:/usr/local/etc/redis/redis.conf:ro
+
+  redis-cache-replica-1:
+    image: redis:7.2-alpine
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    depends_on:
+      - redis-cache-master
+    ports:
+      - "6381:6379"
+    volumes:
+      - ./redis-cache-replica.conf:/usr/local/etc/redis/redis.conf:ro
+
+  redis-cache-replica-2:
+    image: redis:7.2-alpine
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    depends_on:
+      - redis-cache-master
+    ports:
+      - "6382:6379"
+    volumes:
+      - ./redis-cache-replica.conf:/usr/local/etc/redis/redis.conf:ro
+
+  redis-coord-master:
+    image: redis:7.2-alpine
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    ports:
+      - "6480:6379"
+    volumes:
+      - ./redis-coord-master.conf:/usr/local/etc/redis/redis.conf:ro
+
+  redis-coord-replica-1:
+    image: redis:7.2-alpine
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    depends_on:
+      - redis-coord-master
+    ports:
+      - "6481:6379"
+    volumes:
+      - ./redis-coord-replica.conf:/usr/local/etc/redis/redis.conf:ro
+
+  redis-coord-replica-2:
+    image: redis:7.2-alpine
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    depends_on:
+      - redis-coord-master
+    ports:
+      - "6482:6379"
+    volumes:
+      - ./redis-coord-replica.conf:/usr/local/etc/redis/redis.conf:ro
+
+  sentinel-1:
+    image: redis:7.2-alpine
+    command: ["sh", "-c", "cp /usr/local/etc/redis/sentinel.conf /tmp/sentinel.conf && exec redis-server /tmp/sentinel.conf --sentinel"]
+    depends_on:
+      - redis-cache-master
+      - redis-coord-master
+    ports:
+      - "26379:26379"
+    volumes:
+      - ./sentinel-1.conf:/usr/local/etc/redis/sentinel.conf:ro
+
+  sentinel-2:
+    image: redis:7.2-alpine
+    command: ["sh", "-c", "cp /usr/local/etc/redis/sentinel.conf /tmp/sentinel.conf && exec redis-server /tmp/sentinel.conf --sentinel"]
+    depends_on:
+      - redis-cache-master
+      - redis-coord-master
+    ports:
+      - "26380:26379"
+    volumes:
+      - ./sentinel-2.conf:/usr/local/etc/redis/sentinel.conf:ro
+
+  sentinel-3:
+    image: redis:7.2-alpine
+    command: ["sh", "-c", "cp /usr/local/etc/redis/sentinel.conf /tmp/sentinel.conf && exec redis-server /tmp/sentinel.conf --sentinel"]
+    depends_on:
+      - redis-cache-master
+      - redis-coord-master
+    ports:
+      - "26381:26379"
+    volumes:
+      - ./sentinel-3.conf:/usr/local/etc/redis/sentinel.conf:ro
+
+  sentinel-4:
+    image: redis:7.2-alpine
+    command: ["sh", "-c", "cp /usr/local/etc/redis/sentinel.conf /tmp/sentinel.conf && exec redis-server /tmp/sentinel.conf --sentinel"]
+    depends_on:
+      - redis-cache-master
+      - redis-coord-master
+    ports:
+      - "26382:26379"
+    volumes:
+      - ./sentinel-4.conf:/usr/local/etc/redis/sentinel.conf:ro
+
+  sentinel-5:
+    image: redis:7.2-alpine
+    command: ["sh", "-c", "cp /usr/local/etc/redis/sentinel.conf /tmp/sentinel.conf && exec redis-server /tmp/sentinel.conf --sentinel"]
+    depends_on:
+      - redis-cache-master
+      - redis-coord-master
+    ports:
+      - "26383:26379"
+    volumes:
+      - ./sentinel-5.conf:/usr/local/etc/redis/sentinel.conf:ro

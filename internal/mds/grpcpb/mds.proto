@@ -1,0 +1,476 @@
+syntax = "proto3";
+
+package astrastorage.mds.v1;
+
+option go_package = "AstraStorage/internal/mds/grpcpb;grpcpb";
+
+import "google/protobuf/timestamp.proto";
+
+message Checksum {
+  string algorithm = 1 [json_name = "Algorithm"];
+  string value = 2 [json_name = "Value"];
+  bool verified = 3 [json_name = "Verified"];
+  google.protobuf.Timestamp verified_at = 4 [json_name = "VerifiedAt"];
+}
+
+message RetryState {
+  int32 attempt = 1 [json_name = "Attempt"];
+  int32 max_attempts = 2 [json_name = "MaxAttempts"];
+  bool retryable = 3 [json_name = "Retryable"];
+  string last_error_code = 4 [json_name = "LastErrorCode"];
+  string last_error_message = 5 [json_name = "LastErrorMessage"];
+  int64 last_failed_offset = 6 [json_name = "LastFailedOffset"];
+  string last_failed_chunk = 7 [json_name = "LastFailedChunk"];
+  google.protobuf.Timestamp last_failure_at = 8 [json_name = "LastFailureAt"];
+  google.protobuf.Timestamp next_retry_at = 9 [json_name = "NextRetryAt"];
+}
+
+message ReplicaPolicy {
+  int32 desired_replica_count = 1 [json_name = "DesiredReplicaCount"];
+  int32 minimum_replica_count = 2 [json_name = "MinimumReplicaCount"];
+  int32 current_replica_count = 3 [json_name = "CurrentReplicaCount"];
+}
+
+message NodeInfo {
+  string id = 1 [json_name = "ID"];
+  string address = 2 [json_name = "Address"];
+  string rack = 3 [json_name = "Rack"];
+  string zone = 4 [json_name = "Zone"];
+  string region = 5 [json_name = "Region"];
+  map<string, string> labels = 6 [json_name = "Labels"];
+  int64 capacity = 7 [json_name = "Capacity"];
+  int64 used = 8 [json_name = "Used"];
+  bool healthy = 9 [json_name = "Healthy"];
+  google.protobuf.Timestamp last_seen_at = 10 [json_name = "LastSeenAt"];
+  google.protobuf.Timestamp updated_at = 11 [json_name = "UpdatedAt"];
+}
+
+message ReplicaMetadata {
+  string id = 1 [json_name = "ID"];
+  string file_id = 2 [json_name = "FileID"];
+  string chunk_id = 3 [json_name = "ChunkID"];
+  string node_id = 4 [json_name = "NodeID"];
+  string role = 5 [json_name = "Role"];
+  string state = 6 [json_name = "State"];
+  Checksum checksum = 7 [json_name = "Checksum"];
+  int64 stored_size = 8 [json_name = "StoredSize"];
+  google.protobuf.Timestamp created_at = 9 [json_name = "CreatedAt"];
+  google.protobuf.Timestamp updated_at = 10 [json_name = "UpdatedAt"];
+  google.protobuf.Timestamp verified_at = 11 [json_name = "VerifiedAt"];
+}
+
+message NodePlacement {
+  NodeInfo node = 1 [json_name = "Node"];
+  string replica_role = 2 [json_name = "ReplicaRole"];
+  string replica_state = 3 [json_name = "ReplicaState"];
+  bool is_primary = 4 [json_name = "IsPrimary"];
+  repeated string chunk_ids = 5 [json_name = "ChunkIDs"];
+  int64 stored_size = 6 [json_name = "StoredSize"];
+  string checksum_state = 7 [json_name = "ChecksumState"];
+  google.protobuf.Timestamp last_sync_at = 8 [json_name = "LastSyncAt"];
+}
+
+message UploadSession {
+  string id = 1 [json_name = "ID"];
+  string file_id = 2 [json_name = "FileID"];
+  string upload_key = 3 [json_name = "UploadKey"];
+  string status = 4 [json_name = "Status"];
+  int64 expected_size = 5 [json_name = "ExpectedSize"];
+  int64 chunk_size = 6 [json_name = "ChunkSize"];
+  int64 confirmed_offset = 7 [json_name = "ConfirmedOffset"];
+  int64 next_offset = 8 [json_name = "NextOffset"];
+  string last_persisted_chunk = 9 [json_name = "LastPersistedChunk"];
+  Checksum expected_checksum = 10 [json_name = "ExpectedChecksum"];
+  Checksum verified_checksum = 11 [json_name = "VerifiedChecksum"];
+  RetryState retry = 12 [json_name = "Retry"];
+  google.protobuf.Timestamp created_at = 13 [json_name = "CreatedAt"];
+  google.protobuf.Timestamp updated_at = 14 [json_name = "UpdatedAt"];
+  google.protobuf.Timestamp expires_at = 15 [json_name = "ExpiresAt"];
+  google.protobuf.Timestamp completed_at = 16 [json_name = "CompletedAt"];
+  map<string, string> client_metadata = 17 [json_name = "ClientMetadata"];
+  map<string, string> transport_attributes = 18 [json_name = "TransportAttributes"];
+}
+
+message FileMetadata {
+  string id = 1 [json_name = "ID"];
+  string namespace = 2 [json_name = "Namespace"];
+  string inode_id = 3 [json_name = "InodeID"];
+  string parent_inode_id = 4 [json_name = "ParentInodeID"];
+  string path = 5 [json_name = "Path"];
+  string name = 6 [json_name = "Name"];
+  int64 size = 7 [json_name = "Size"];
+  int64 stored_size = 8 [json_name = "StoredSize"];
+  int64 chunk_size = 9 [json_name = "ChunkSize"];
+  int64 version = 10 [json_name = "Version"];
+  string status = 11 [json_name = "Status"];
+  string content_type = 12 [json_name = "ContentType"];
+  string storage_class = 13 [json_name = "StorageClass"];
+  string primary_node_id = 14 [json_name = "PrimaryNodeID"];
+  repeated string secondary_node_ids = 15 [json_name = "SecondaryNodeIDs"];
+  string latest_upload_session_id = 16 [json_name = "LatestUploadSessionID"];
+  Checksum checksum = 17 [json_name = "Checksum"];
+  ReplicaPolicy replica_policy = 18 [json_name = "ReplicaPolicy"];
+  map<string, string> user_metadata = 19 [json_name = "UserMetadata"];
+  map<string, string> tags = 20 [json_name = "Tags"];
+  map<string, NodePlacement> node_placements = 21 [json_name = "NodePlacements"];
+  google.protobuf.Timestamp created_at = 22 [json_name = "CreatedAt"];
+  google.protobuf.Timestamp updated_at = 23 [json_name = "UpdatedAt"];
+  google.protobuf.Timestamp completed_at = 24 [json_name = "CompletedAt"];
+}
+
+message InodeMetadata {
+  string id = 1 [json_name = "ID"];
+  string parent_id = 2 [json_name = "ParentID"];
+  string file_id = 3 [json_name = "FileID"];
+  string path = 4 [json_name = "Path"];
+  string name = 5 [json_name = "Name"];
+  string type = 6 [json_name = "Type"];
+  string status = 7 [json_name = "Status"];
+  int64 size = 8 [json_name = "Size"];
+  uint32 permissions = 9 [json_name = "Permissions"];
+  string owner = 10 [json_name = "Owner"];
+  string group = 11 [json_name = "Group"];
+  int64 link_count = 12 [json_name = "LinkCount"];
+  int64 generation = 13 [json_name = "Generation"];
+  google.protobuf.Timestamp created_at = 14 [json_name = "CreatedAt"];
+  google.protobuf.Timestamp updated_at = 15 [json_name = "UpdatedAt"];
+  google.protobuf.Timestamp accessed_at = 16 [json_name = "AccessedAt"];
+}
+
+message DirectoryEntry {
+  string parent_id = 1 [json_name = "ParentID"];
+  string child_id = 2 [json_name = "ChildID"];
+  string name = 3 [json_name = "Name"];
+  string type = 4 [json_name = "Type"];
+  google.protobuf.Timestamp created_at = 5 [json_name = "CreatedAt"];
+  google.protobuf.Timestamp updated_at = 6 [json_name = "UpdatedAt"];
+}
+
+message ChunkMetadata {
+  string id = 1 [json_name = "ID"];
+  string file_id = 2 [json_name = "FileID"];
+  int64 index = 3 [json_name = "Index"];
+  int64 offset = 4 [json_name = "Offset"];
+  int64 size = 5 [json_name = "Size"];
+  string status = 6 [json_name = "Status"];
+  int64 version = 7 [json_name = "Version"];
+  Checksum checksum = 8 [json_name = "Checksum"];
+  ReplicaPolicy replica_policy = 9 [json_name = "ReplicaPolicy"];
+  int32 replica_count = 10 [json_name = "ReplicaCount"];
+  map<string, ReplicaMetadata> replicas = 11 [json_name = "Replicas"];
+  google.protobuf.Timestamp created_at = 12 [json_name = "CreatedAt"];
+  google.protobuf.Timestamp updated_at = 13 [json_name = "UpdatedAt"];
+  google.protobuf.Timestamp verified_at = 14 [json_name = "VerifiedAt"];
+  string last_error_code = 15 [json_name = "LastErrorCode"];
+}
+
+message DownloadChunkPlan {
+  string chunk_id = 1 [json_name = "ChunkID"];
+  int64 index = 2 [json_name = "Index"];
+  int64 offset = 3 [json_name = "Offset"];
+  int64 size = 4 [json_name = "Size"];
+  string status = 5 [json_name = "Status"];
+  string preferred_node_id = 6 [json_name = "PreferredNodeID"];
+  repeated string candidate_node_ids = 7 [json_name = "CandidateNodeIDs"];
+  Checksum checksum = 8 [json_name = "Checksum"];
+  int32 replica_count = 9 [json_name = "ReplicaCount"];
+}
+
+message DownloadPlan {
+  string file_id = 1 [json_name = "FileID"];
+  string inode_id = 2 [json_name = "InodeID"];
+  string path = 3 [json_name = "Path"];
+  int64 size = 4 [json_name = "Size"];
+  int64 stored_size = 5 [json_name = "StoredSize"];
+  int64 chunk_size = 6 [json_name = "ChunkSize"];
+  string file_status = 7 [json_name = "FileStatus"];
+  int32 chunk_count = 8 [json_name = "ChunkCount"];
+  repeated DownloadChunkPlan chunks = 9 [json_name = "Chunks"];
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  string status = 1 [json_name = "Status"];
+}
+
+message CreateDirectoryRequest {
+  string inode_id = 1 [json_name = "InodeID"];
+  string parent_id = 2 [json_name = "ParentID"];
+  string name = 3 [json_name = "Name"];
+  uint32 permissions = 4 [json_name = "Permissions"];
+  string owner = 5 [json_name = "Owner"];
+  string group = 6 [json_name = "Group"];
+  google.protobuf.Timestamp created_at = 7 [json_name = "CreatedAt"];
+}
+
+message CreateDirectoryResponse {
+  InodeMetadata inode = 1 [json_name = "Inode"];
+}
+
+message CreateFileRequest {
+  string inode_id = 1 [json_name = "InodeID"];
+  string file_id = 2 [json_name = "FileID"];
+  string parent_id = 3 [json_name = "ParentID"];
+  string name = 4 [json_name = "Name"];
+  int64 size = 5 [json_name = "Size"];
+  string content_type = 6 [json_name = "ContentType"];
+  string storage_class = 7 [json_name = "StorageClass"];
+  map<string, string> user_metadata = 8 [json_name = "UserMetadata"];
+  map<string, string> tags = 9 [json_name = "Tags"];
+  ReplicaPolicy replica_policy = 10 [json_name = "ReplicaPolicy"];
+  google.protobuf.Timestamp created_at = 11 [json_name = "CreatedAt"];
+}
+
+message CreateFileResponse {
+  FileMetadata file = 1 [json_name = "File"];
+}
+
+message RegisterNodeRequest {
+  string id = 1 [json_name = "ID"];
+  string address = 2 [json_name = "Address"];
+  string rack = 3 [json_name = "Rack"];
+  string zone = 4 [json_name = "Zone"];
+  string region = 5 [json_name = "Region"];
+  map<string, string> labels = 6 [json_name = "Labels"];
+  int64 capacity = 7 [json_name = "Capacity"];
+  int64 used = 8 [json_name = "Used"];
+  bool healthy = 9 [json_name = "Healthy"];
+  google.protobuf.Timestamp last_seen_at = 10 [json_name = "LastSeenAt"];
+  google.protobuf.Timestamp updated_at = 11 [json_name = "UpdatedAt"];
+}
+
+message RegisterNodeResponse {
+  NodeInfo node = 1 [json_name = "Node"];
+}
+
+message HeartbeatNodeRequest {
+  string node_id = 1 [json_name = "NodeID"];
+  bool healthy = 2 [json_name = "Healthy"];
+  int64 capacity = 3 [json_name = "Capacity"];
+  int64 used = 4 [json_name = "Used"];
+  google.protobuf.Timestamp last_seen_at = 5 [json_name = "LastSeenAt"];
+}
+
+message HeartbeatNodeResponse {
+  NodeInfo node = 1 [json_name = "Node"];
+}
+
+message UploadTarget {
+  string node_id = 1 [json_name = "NodeID"];
+  string address = 2 [json_name = "Address"];
+}
+
+message AllocateUploadTargetsRequest {
+  string file_id = 1 [json_name = "FileID"];
+  int64 chunk_index = 2 [json_name = "ChunkIndex"];
+}
+
+message AllocateUploadTargetsResponse {
+  string file_id = 1 [json_name = "FileID"];
+  int64 chunk_index = 2 [json_name = "ChunkIndex"];
+  repeated UploadTarget targets = 3 [json_name = "Targets"];
+}
+
+message StartUploadRequest {
+  string session_id = 1 [json_name = "SessionID"];
+  string file_id = 2 [json_name = "FileID"];
+  string upload_key = 3 [json_name = "UploadKey"];
+  int64 expected_size = 4 [json_name = "ExpectedSize"];
+  Checksum expected_checksum = 5 [json_name = "ExpectedChecksum"];
+  map<string, string> client_metadata = 6 [json_name = "ClientMetadata"];
+  map<string, string> transport_attributes = 7 [json_name = "TransportAttributes"];
+  google.protobuf.Timestamp expires_at = 8 [json_name = "ExpiresAt"];
+  google.protobuf.Timestamp created_at = 9 [json_name = "CreatedAt"];
+}
+
+message StartUploadResponse {
+  UploadSession session = 1 [json_name = "Session"];
+}
+
+message CommitChunkRequest {
+  string session_id = 1 [json_name = "SessionID"];
+  string chunk_id = 2 [json_name = "ChunkID"];
+  int64 index = 3 [json_name = "Index"];
+  int64 offset = 4 [json_name = "Offset"];
+  int64 size = 5 [json_name = "Size"];
+  string status = 6 [json_name = "Status"];
+  Checksum checksum = 7 [json_name = "Checksum"];
+  map<string, ReplicaMetadata> replicas = 8 [json_name = "Replicas"];
+  ReplicaPolicy replica_policy = 9 [json_name = "ReplicaPolicy"];
+  google.protobuf.Timestamp committed_at = 10 [json_name = "CommittedAt"];
+}
+
+message CommitChunkResponse {
+  ChunkMetadata chunk = 1 [json_name = "Chunk"];
+}
+
+message CompleteUploadRequest {
+  string session_id = 1 [json_name = "SessionID"];
+  Checksum final_checksum = 2 [json_name = "FinalChecksum"];
+  repeated string expected_statuses = 3 [json_name = "ExpectedStatuses"];
+  google.protobuf.Timestamp completed_at = 4 [json_name = "CompletedAt"];
+}
+
+message CompleteUploadResponse {
+  FileMetadata file = 1 [json_name = "File"];
+}
+
+message VerifyUploadRequest {
+  string session_id = 1 [json_name = "SessionID"];
+  Checksum verified_checksum = 2 [json_name = "VerifiedChecksum"];
+  repeated string expected_statuses = 3 [json_name = "ExpectedStatuses"];
+  google.protobuf.Timestamp verified_at = 4 [json_name = "VerifiedAt"];
+}
+
+message VerifyUploadResponse {
+  FileMetadata file = 1 [json_name = "File"];
+}
+
+message FailUploadVerificationRequest {
+  string session_id = 1 [json_name = "SessionID"];
+  string chunk_id = 2 [json_name = "ChunkID"];
+  Checksum actual_checksum = 3 [json_name = "ActualChecksum"];
+  repeated string expected_statuses = 4 [json_name = "ExpectedStatuses"];
+  string error_code = 5 [json_name = "ErrorCode"];
+  string error_message = 6 [json_name = "ErrorMessage"];
+  bool retryable = 7 [json_name = "Retryable"];
+  int32 attempt = 8 [json_name = "Attempt"];
+  int32 max_attempts = 9 [json_name = "MaxAttempts"];
+  google.protobuf.Timestamp failed_at = 10 [json_name = "FailedAt"];
+  google.protobuf.Timestamp next_retry_at = 11 [json_name = "NextRetryAt"];
+}
+
+message FailUploadVerificationResponse {
+  FileMetadata file = 1 [json_name = "File"];
+}
+
+message RetryUploadRequest {
+  string session_id = 1 [json_name = "SessionID"];
+  repeated string expected_statuses = 2 [json_name = "ExpectedStatuses"];
+  google.protobuf.Timestamp retried_at = 3 [json_name = "RetriedAt"];
+}
+
+message RetryUploadResponse {
+  FileMetadata file = 1 [json_name = "File"];
+}
+
+message RenameInodeRequest {
+  string inode_id = 1 [json_name = "InodeID"];
+  string new_name = 2 [json_name = "NewName"];
+  google.protobuf.Timestamp updated_at = 3 [json_name = "UpdatedAt"];
+}
+
+message RenameInodeResponse {
+  InodeMetadata inode = 1 [json_name = "Inode"];
+}
+
+message MoveInodeRequest {
+  string inode_id = 1 [json_name = "InodeID"];
+  string target_parent_id = 2 [json_name = "TargetParentID"];
+  string new_name = 3 [json_name = "NewName"];
+  google.protobuf.Timestamp updated_at = 4 [json_name = "UpdatedAt"];
+}
+
+message MoveInodeResponse {
+  InodeMetadata inode = 1 [json_name = "Inode"];
+}
+
+message DeleteFileRequest {
+  string file_id = 1 [json_name = "FileID"];
+  google.protobuf.Timestamp deleted_at = 2 [json_name = "DeletedAt"];
+}
+
+message DeleteFileResponse {}
+
+message DeleteDirectoryRequest {
+  string inode_id = 1 [json_name = "InodeID"];
+  bool recursive = 2 [json_name = "Recursive"];
+  google.protobuf.Timestamp deleted_at = 3 [json_name = "DeletedAt"];
+}
+
+message DeleteDirectoryResponse {}
+
+message GetInodeRequest {
+  string id = 1 [json_name = "ID"];
+}
+
+message GetInodeResponse {
+  InodeMetadata inode = 1 [json_name = "Inode"];
+}
+
+message GetFileRequest {
+  string id = 1 [json_name = "ID"];
+}
+
+message GetFileResponse {
+  FileMetadata file = 1 [json_name = "File"];
+}
+
+message GetNodeRequest {
+  string id = 1 [json_name = "ID"];
+}
+
+message GetNodeResponse {
+  NodeInfo node = 1 [json_name = "Node"];
+}
+
+message ListChildrenRequest {
+  string parent_id = 1 [json_name = "ParentID"];
+  int32 limit = 2 [json_name = "Limit"];
+  int32 offset = 3 [json_name = "Offset"];
+}
+
+message ListChildrenResponse {
+  repeated DirectoryEntry entries = 1 [json_name = "Entries"];
+}
+
+message ListFileChunksRequest {
+  string file_id = 1 [json_name = "FileID"];
+}
+
+message ListFileChunksResponse {
+  repeated ChunkMetadata chunks = 1 [json_name = "Chunks"];
+}
+
+message GetUploadSessionRequest {
+  string session_id = 1 [json_name = "SessionID"];
+}
+
+message GetUploadSessionResponse {
+  UploadSession session = 1 [json_name = "Session"];
+}
+
+message BuildDownloadPlanRequest {
+  string file_id = 1 [json_name = "FileID"];
+}
+
+message BuildDownloadPlanResponse {
+  DownloadPlan plan = 1 [json_name = "Plan"];
+}
+
+service MetadataService {
+  rpc Health(HealthRequest) returns (HealthResponse);
+  rpc CreateDirectory(CreateDirectoryRequest) returns (CreateDirectoryResponse);
+  rpc CreateFile(CreateFileRequest) returns (CreateFileResponse);
+  rpc RegisterNode(RegisterNodeRequest) returns (RegisterNodeResponse);
+  rpc HeartbeatNode(HeartbeatNodeRequest) returns (HeartbeatNodeResponse);
+  rpc AllocateUploadTargets(AllocateUploadTargetsRequest) returns (AllocateUploadTargetsResponse);
+  rpc StartUpload(StartUploadRequest) returns (StartUploadResponse);
+  rpc CommitChunk(CommitChunkRequest) returns (CommitChunkResponse);
+  rpc CompleteUpload(CompleteUploadRequest) returns (CompleteUploadResponse);
+  rpc VerifyUpload(VerifyUploadRequest) returns (VerifyUploadResponse);
+  rpc FailUploadVerification(FailUploadVerificationRequest) returns (FailUploadVerificationResponse);
+  rpc RetryUpload(RetryUploadRequest) returns (RetryUploadResponse);
+  rpc RenameInode(RenameInodeRequest) returns (RenameInodeResponse);
+  rpc MoveInode(MoveInodeRequest) returns (MoveInodeResponse);
+  rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse);
+  rpc DeleteDirectory(DeleteDirectoryRequest) returns (DeleteDirectoryResponse);
+  rpc GetInode(GetInodeRequest) returns (GetInodeResponse);
+  rpc GetFile(GetFileRequest) returns (GetFileResponse);
+  rpc GetNode(GetNodeRequest) returns (GetNodeResponse);
+  rpc ListChildren(ListChildrenRequest) returns (ListChildrenResponse);
+  rpc ListFileChunks(ListFileChunksRequest) returns (ListFileChunksResponse);
+  rpc GetUploadSession(GetUploadSessionRequest) returns (GetUploadSessionResponse);
+  rpc BuildDownloadPlan(BuildDownloadPlanRequest) returns (BuildDownloadPlanResponse);
+}

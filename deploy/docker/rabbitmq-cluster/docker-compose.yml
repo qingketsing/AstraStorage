@@ -1,0 +1,80 @@
+services:
+  rabbitmq-1:
+    image: rabbitmq:4.1-management
+    hostname: rabbitmq-1
+    environment:
+      RABBITMQ_NODENAME: rabbit@rabbitmq-1
+      RABBITMQ_ERLANG_COOKIE: astrastorage-rabbitmq-cluster-cookie
+      RABBITMQ_DEFAULT_USER: astra
+      RABBITMQ_DEFAULT_PASS: astra-dev
+      RABBITMQ_DEFAULT_VHOST: /astra
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+      - "15692:15692"
+    volumes:
+      - rabbitmq-1-data:/var/lib/rabbitmq
+      - ./rabbitmq-1.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  rabbitmq-2:
+    image: rabbitmq:4.1-management
+    hostname: rabbitmq-2
+    depends_on:
+      rabbitmq-1:
+        condition: service_healthy
+    environment:
+      RABBITMQ_NODENAME: rabbit@rabbitmq-2
+      RABBITMQ_ERLANG_COOKIE: astrastorage-rabbitmq-cluster-cookie
+      RABBITMQ_DEFAULT_USER: astra
+      RABBITMQ_DEFAULT_PASS: astra-dev
+      RABBITMQ_DEFAULT_VHOST: /astra
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+      - "15693:15692"
+    volumes:
+      - rabbitmq-2-data:/var/lib/rabbitmq
+      - ./rabbitmq-2.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  rabbitmq-3:
+    image: rabbitmq:4.1-management
+    hostname: rabbitmq-3
+    depends_on:
+      rabbitmq-2:
+        condition: service_healthy
+    environment:
+      RABBITMQ_NODENAME: rabbit@rabbitmq-3
+      RABBITMQ_ERLANG_COOKIE: astrastorage-rabbitmq-cluster-cookie
+      RABBITMQ_DEFAULT_USER: astra
+      RABBITMQ_DEFAULT_PASS: astra-dev
+      RABBITMQ_DEFAULT_VHOST: /astra
+    ports:
+      - "5674:5672"
+      - "15674:15672"
+      - "15694:15692"
+    volumes:
+      - rabbitmq-3-data:/var/lib/rabbitmq
+      - ./rabbitmq-3.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  rabbitmq-1-data:
+  rabbitmq-2-data:
+  rabbitmq-3-data:
