@@ -1,0 +1,78 @@
+groups:
+  - name: astra-availability
+    rules:
+      - alert: AstraTargetDown
+        expr: up{job=~"astra-(mds|gateway|datanode)"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "AstraStorage target is down"
+          description: "{{ $labels.job }} target {{ $labels.instance }} has been unreachable for more than 30 seconds."
+
+      - alert: AstraMDSNoLeader
+        expr: sum(astrastorage_mds_leader_is_leader) < 1
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "No active MDS leader"
+          description: "No MDS instance has reported leadership for more than 30 seconds."
+
+      - alert: AstraMDSLeaderFlapping
+        expr: increase(astrastorage_mds_leader_transitions_total{result="started"}[10m]) > 3
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "MDS leadership is flapping"
+          description: "MDS leadership started more than 3 times in the last 10 minutes."
+
+  - name: astra-control-plane
+    rules:
+      - alert: AstraMDSRepairFailures
+        expr: increase(astrastorage_mds_repair_runs_total{result!="success"}[10m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "MDS repair loop has failures"
+          description: "At least one MDS repair run failed during the last 10 minutes."
+
+      - alert: AstraGatewayUpstreamFailures
+        expr: sum(increase(astrastorage_gateway_upstream_requests_total{result!="success"}[5m])) >= 3
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Gateway upstream calls are failing"
+          description: "Gateway upstream request failures reached at least 3 in the last 5 minutes."
+
+      - alert: AstraGatewayUploadFailures
+        expr: sum(increase(astrastorage_gateway_upload_requests_total{result!="success"}[5m])) >= 3
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Gateway uploads are failing"
+          description: "Gateway upload failures reached at least 3 in the last 5 minutes."
+
+  - name: astra-data-plane
+    rules:
+      - alert: AstraDatanodeReplicationFailures
+        expr: sum(increase(astrastorage_datanode_replicate_requests_total{result="failure"}[5m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Datanode replication is failing"
+          description: "At least one datanode replication request failed during the last 5 minutes."
+
+      - alert: AstraDatanodeHeartbeatStale
+        expr: max(astrastorage_datanode_last_heartbeat_timestamp_seconds) > 0 and (time() - max(astrastorage_datanode_last_heartbeat_timestamp_seconds) > 60)
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Datanode heartbeat is stale"
+          description: "No successful datanode heartbeat has been observed for more than 60 seconds."
