@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: astra-gateway
+  namespace: astrastorage
+  labels:
+    app.kubernetes.io/name: astra-gateway
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/part-of: astrastorage
+spec:
+  selector:
+    app.kubernetes.io/name: astra-gateway
+    app.kubernetes.io/part-of: astrastorage
+  ports:
+    - name: http
+      port: 11080
+      targetPort: http

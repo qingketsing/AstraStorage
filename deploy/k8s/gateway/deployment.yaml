@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: astra-gateway
+  namespace: astrastorage
+  labels:
+    app.kubernetes.io/name: astra-gateway
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/part-of: astrastorage
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: astra-gateway
+      app.kubernetes.io/part-of: astrastorage
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: astra-gateway
+        app.kubernetes.io/component: gateway
+        app.kubernetes.io/part-of: astrastorage
+    spec:
+      containers:
+        - name: gateway
+          image: astrastorage/gateway:local
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: GATEWAY_HTTP_ADDR
+              value: ":11080"
+            - name: GATEWAY_MDS_HTTP_BASE_URL
+              value: http://astra-mds.astrastorage.svc.cluster.local:8080
+            - name: GATEWAY_DATANODE_BASE_URL
+              value: http://astra-datanode.astrastorage.svc.cluster.local:10080
+          ports:
+            - name: http
+              containerPort: 11080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

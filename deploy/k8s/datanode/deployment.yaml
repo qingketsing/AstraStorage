@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: astra-datanode
+  namespace: astrastorage
+  labels:
+    app.kubernetes.io/name: astra-datanode
+    app.kubernetes.io/component: datanode
+    app.kubernetes.io/part-of: astrastorage
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: astra-datanode
+      app.kubernetes.io/part-of: astrastorage
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: astra-datanode
+        app.kubernetes.io/component: datanode
+        app.kubernetes.io/part-of: astrastorage
+    spec:
+      containers:
+        - name: datanode
+          image: astrastorage/datanode:local
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DATANODE_HTTP_ADDR
+              value: ":10080"
+            - name: DATANODE_DATA_DIR
+              value: /data/datanode
+            - name: DATANODE_MDS_HTTP_BASE_URL
+              value: http://astra-mds.astrastorage.svc.cluster.local:8080
+            - name: DATANODE_ADVERTISE_URL
+              value: http://astra-datanode.astrastorage.svc.cluster.local:10080
+            - name: DATANODE_CAPACITY_BYTES
+              value: "10737418240"
+          ports:
+            - name: http
+              containerPort: 10080
+          volumeMounts:
+            - name: datanode-data
+              mountPath: /data/datanode
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: datanode-data
+          emptyDir: {}

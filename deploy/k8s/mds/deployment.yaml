@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: astra-mds
+  namespace: astrastorage
+  labels:
+    app.kubernetes.io/name: astra-mds
+    app.kubernetes.io/component: metadata-service
+    app.kubernetes.io/part-of: astrastorage
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: astra-mds
+      app.kubernetes.io/part-of: astrastorage
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: astra-mds
+        app.kubernetes.io/component: metadata-service
+        app.kubernetes.io/part-of: astrastorage
+    spec:
+      containers:
+        - name: mds
+          image: astrastorage/mds:local
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MDS_HTTP_ADDR
+              value: ":8080"
+            - name: MDS_STORE_BACKEND
+              value: memory
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
