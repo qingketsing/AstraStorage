@@ -337,6 +337,28 @@ type postgresFixture struct {
 	service *mds.Service
 }
 
+func TestResetPostgresState_TruncatesForeignKeyDependents(t *testing.T) {
+	db := &captureResetDB{}
+	if err := resetPostgresState(context.Background(), db); err != nil {
+		t.Fatalf("reset postgres state: %v", err)
+	}
+	if !strings.Contains(db.query, "mds_replica_plans") {
+		t.Fatalf("expected reset query to truncate mds_replica_plans, got %q", db.query)
+	}
+	if !strings.Contains(db.query, "CASCADE") {
+		t.Fatalf("expected reset query to use CASCADE for foreign key dependents, got %q", db.query)
+	}
+}
+
+type captureResetDB struct {
+	query string
+}
+
+func (db *captureResetDB) Exec(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error) {
+	db.query = query
+	return pgconn.CommandTag{}, nil
+}
+
 func newPostgresFixture(t *testing.T) postgresFixture {
 	t.Helper()
 
@@ -389,6 +411,7 @@ func resetPostgresState(ctx context.Context, db interface {
 }) error {
 	_, err := db.Exec(ctx, `
 TRUNCATE TABLE
+	mds_replica_plans,
 	mds_file_placements,
 	mds_chunk_replicas,
 	mds_upload_sessions,
@@ -396,6 +419,7 @@ TRUNCATE TABLE
 	mds_files,
 	mds_inodes,
 	mds_nodes
+CASCADE
 `)
 	return err
 }
