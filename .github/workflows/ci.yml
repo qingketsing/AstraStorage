@@ -6,7 +6,43 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-and-build:
+  unit-test:
+    runs-on: ubuntu-latest
+
+    env:
+      GOCACHE: /tmp/go-cache
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run unit tests
+        run: go test ./...
+
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      GOCACHE: /tmp/go-cache
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run build
+        run: go build ./...
+
+  postgres-integration:
     runs-on: ubuntu-latest
 
     services:
@@ -37,8 +73,23 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Run Go Tests
-        run: go test ./...
+      - name: Run PostgreSQL integration tests
+        run: go test -count=1 ./test/integration -run TestPostgresIntegration
 
-      - name: Run Go Build
-        run: go build ./...
+  etcd-integration:
+    runs-on: ubuntu-latest
+
+    env:
+      GOCACHE: /tmp/go-cache
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run etcd integration tests
+        run: go test -tags=integration ./internal/platform/etcd/leader
