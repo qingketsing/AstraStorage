@@ -118,6 +118,226 @@ func TestHTTPHandler_RecordsNormalizedRouteMetrics(t *testing.T) {
 	assertMetricValue(t, requests.GetMetric(), map[string]string{"service": "gateway", "route": "/unmatched", "status_class": "4xx"}, 5)
 }
 
+func TestHTTPHandler_PoCMetadataAPIs(t *testing.T) {
+	calls := make(map[string]int)
+	client, err := newUpstreamClient(Config{
+		MDSHTTPBaseURL:  "http://mds.local",
+		DataNodeBaseURL: "http://datanode.local",
+	}, &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calls[req.URL.String()]++
+		switch req.URL.String() {
+		case "http://mds.local/rpc/mds.create_directory":
+			var payload mdsrpc.CreateDirectoryRequest
+			if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+				return nil, err
+			}
+			if payload.InodeID != "dir-1" || payload.ParentID != metadata.InodeID(metadata.RootInodeID) || payload.Name != "docs" {
+				t.Fatalf("unexpected create directory request: %#v", payload)
+			}
+			if payload.CreatedAt.IsZero() {
+				t.Fatalf("expected create directory request to include CreatedAt")
+			}
+			return jsonResponse(req, http.StatusOK, `{"Inode":{"ID":"dir-1","ParentID":"root","Name":"docs","Type":"directory","Status":"active"}}`), nil
+		case "http://mds.local/rpc/mds.list_children":
+			var payload mdsrpc.ListChildrenRequest
+			if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+				return nil, err
+			}
+			if payload.ParentID != "root" || payload.Limit != 10 || payload.Offset != 2 {
+				t.Fatalf("unexpected list children request: %#v", payload)
+			}
+			return jsonResponse(req, http.StatusOK, `{"Entries":[{"ParentID":"root","ChildID":"dir-1","Name":"docs","Type":"directory"}]}`), nil
+		case "http://mds.local/rpc/mds.get_file":
+			var payload mdsrpc.GetFileRequest
+			if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+				return nil, err
+			}
+			if payload.ID != "file-1" {
+				t.Fatalf("unexpected get file request: %#v", payload)
+			}
+			return jsonResponse(req, http.StatusOK, `{"File":{"ID":"file-1","InodeID":"inode-1","Name":"hello.txt","Size":11,"Status":"available"}}`), nil
+		case "http://mds.local/rpc/mds.list_file_chunks":
+			var payload mdsrpc.ListFileChunksRequest
+			if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+				return nil, err
+			}
+			if payload.FileID != "file-1" {
+				t.Fatalf("unexpected list file chunks request: %#v", payload)
+			}
+			return jsonResponse(req, http.StatusOK, `{"Chunks":[{"ID":"chunk-0","FileID":"file-1","Index":0,"Offset":0,"Size":11,"Status":"available"}]}`), nil
+		case "http://mds.local/rpc/mds.build_download_plan":
+			var payload mdsrpc.BuildDownloadPlanRequest
+			if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+				return nil, err
+			}
+			if payload.FileID != "file-1" {
+				t.Fatalf("unexpected build download plan request: %#v", payload)
+			}
+			return jsonResponse(req, http.StatusOK, `{"Plan":{"FileID":"file-1","InodeID":"inode-1","Path":"/hello.txt","Size":11,"StoredSize":11,"ChunkSize":4194304,"FileStatus":"available","ChunkCount":1,"Chunks":[{"ChunkID":"chunk-0","Index":0,"Offset":0,"Size":11,"Status":"available","PreferredNodeID":"node-1","CandidateNodeIDs":["node-1"],"ReplicaCount":1}]}}`), nil
+		default:
+			return jsonResponse(req, http.StatusInternalServerError, req.URL.String()), nil
+		}
+	})})
+	if err != nil {
+		t.Fatalf("new upstream client: %v", err)
+	}
+	handler, err := NewHTTPHandler(client, metrics.NewRegistry("gateway"))
+	if err != nil {
+		t.Fatalf("new http handler: %v", err)
+	}
+
+	directoryBody := strings.NewReader(`{"inode_id":"dir-1","name":"docs"}`)
+	directoryReq := httptest.NewRequest(http.MethodPost, "/directories", directoryBody)
+	directoryReq.Header.Set("Content-Type", "application/json")
+	directoryRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(directoryRecorder, directoryReq)
+	if directoryRecorder.Result().StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201 from create directory, got %d", directoryRecorder.Result().StatusCode)
+	}
+	var directoryResp mdsrpc.CreateDirectoryResponse
+	if err := json.NewDecoder(directoryRecorder.Result().Body).Decode(&directoryResp); err != nil {
+		t.Fatalf("decode create directory response: %v", err)
+	}
+	if directoryResp.Inode == nil || directoryResp.Inode.ID != "dir-1" || directoryResp.Inode.Name != "docs" {
+		t.Fatalf("unexpected create directory response: %#v", directoryResp)
+	}
+
+	childrenReq := httptest.NewRequest(http.MethodGet, "/directories/root/children?limit=10&offset=2", nil)
+	childrenRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(childrenRecorder, childrenReq)
+	if childrenRecorder.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 from list children, got %d", childrenRecorder.Result().StatusCode)
+	}
+	var childrenResp mdsrpc.ListChildrenResponse
+	if err := json.NewDecoder(childrenRecorder.Result().Body).Decode(&childrenResp); err != nil {
+		t.Fatalf("decode list children response: %v", err)
+	}
+	if len(childrenResp.Entries) != 1 || childrenResp.Entries[0].ChildID != "dir-1" {
+		t.Fatalf("unexpected list children response: %#v", childrenResp)
+	}
+
+	fileReq := httptest.NewRequest(http.MethodGet, "/files/file-1", nil)
+	fileRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(fileRecorder, fileReq)
+	if fileRecorder.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 from get file, got %d", fileRecorder.Result().StatusCode)
+	}
+	var fileResp mdsrpc.GetFileResponse
+	if err := json.NewDecoder(fileRecorder.Result().Body).Decode(&fileResp); err != nil {
+		t.Fatalf("decode get file response: %v", err)
+	}
+	if fileResp.File == nil || fileResp.File.ID != "file-1" || fileResp.File.Name != "hello.txt" {
+		t.Fatalf("unexpected get file response: %#v", fileResp)
+	}
+
+	chunksReq := httptest.NewRequest(http.MethodGet, "/files/file-1/chunks", nil)
+	chunksRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(chunksRecorder, chunksReq)
+	if chunksRecorder.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 from list file chunks, got %d", chunksRecorder.Result().StatusCode)
+	}
+	var chunksResp mdsrpc.ListFileChunksResponse
+	if err := json.NewDecoder(chunksRecorder.Result().Body).Decode(&chunksResp); err != nil {
+		t.Fatalf("decode list file chunks response: %v", err)
+	}
+	if len(chunksResp.Chunks) != 1 || chunksResp.Chunks[0].ID != "chunk-0" {
+		t.Fatalf("unexpected list file chunks response: %#v", chunksResp)
+	}
+
+	planReq := httptest.NewRequest(http.MethodGet, "/files/file-1/download-plan", nil)
+	planRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(planRecorder, planReq)
+	if planRecorder.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 from download plan, got %d", planRecorder.Result().StatusCode)
+	}
+	var planResp mdsrpc.BuildDownloadPlanResponse
+	if err := json.NewDecoder(planRecorder.Result().Body).Decode(&planResp); err != nil {
+		t.Fatalf("decode download plan response: %v", err)
+	}
+	if planResp.Plan == nil || planResp.Plan.FileID != "file-1" || len(planResp.Plan.Chunks) != 1 {
+		t.Fatalf("unexpected download plan response: %#v", planResp)
+	}
+
+	for _, url := range []string{
+		"http://mds.local/rpc/mds.create_directory",
+		"http://mds.local/rpc/mds.list_children",
+		"http://mds.local/rpc/mds.get_file",
+		"http://mds.local/rpc/mds.list_file_chunks",
+		"http://mds.local/rpc/mds.build_download_plan",
+	} {
+		if calls[url] != 1 {
+			t.Fatalf("expected one call to %s, got %d", url, calls[url])
+		}
+	}
+}
+
+func TestHTTPHandler_PoCMetadataAPIValidation(t *testing.T) {
+	handler, _, err := newGatewayTestHandler(t)
+	if err != nil {
+		t.Fatalf("new gateway handler: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		body   string
+		want   int
+	}{
+		{
+			name:   "create directory requires name",
+			method: http.MethodPost,
+			path:   "/directories",
+			body:   `{}`,
+			want:   http.StatusBadRequest,
+		},
+		{
+			name:   "list children rejects negative limit",
+			method: http.MethodGet,
+			path:   "/directories/root/children?limit=-1",
+			want:   http.StatusBadRequest,
+		},
+		{
+			name:   "list children rejects non-integer offset",
+			method: http.MethodGet,
+			path:   "/directories/root/children?offset=nope",
+			want:   http.StatusBadRequest,
+		},
+		{
+			name:   "file chunks only supports get",
+			method: http.MethodPost,
+			path:   "/files/file-1/chunks",
+			want:   http.StatusMethodNotAllowed,
+		},
+		{
+			name:   "download plan only supports get",
+			method: http.MethodDelete,
+			path:   "/files/file-1/download-plan",
+			want:   http.StatusMethodNotAllowed,
+		},
+		{
+			name:   "unknown file subresource",
+			method: http.MethodGet,
+			path:   "/files/file-1/unknown",
+			want:   http.StatusNotFound,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body))
+			if tt.body != "" {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			if recorder.Result().StatusCode != tt.want {
+				t.Fatalf("expected status %d, got %d", tt.want, recorder.Result().StatusCode)
+			}
+		})
+	}
+}
+
 func TestHTTPHandler_UploadRecordsBusinessMetrics(t *testing.T) {
 	var logBuf bytes.Buffer
 	oldFactory := newRequestLogger
@@ -1375,4 +1595,13 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return fn(req)
+}
+
+func jsonResponse(req *http.Request, status int, body string) *http.Response {
+	return &http.Response{
+		StatusCode: status,
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Header:     make(http.Header),
+		Request:    req,
+	}
 }

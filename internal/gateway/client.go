@@ -72,6 +72,10 @@ func (c *UpstreamClient) CheckDataNodeHealth(ctx context.Context) (*HealthStatus
 	return c.checkHealth(ctx, "datanode", c.dataNodeBaseURL)
 }
 
+func (c *UpstreamClient) CreateDirectory(ctx context.Context, req mdsrpc.CreateDirectoryRequest) (*mdsrpc.CreateDirectoryResponse, error) {
+	return callMDSRPC[mdsrpc.CreateDirectoryResponse](ctx, c, mdsrpc.MethodCreateDirectory, req)
+}
+
 func (c *UpstreamClient) CreateFile(ctx context.Context, req mdsrpc.CreateFileRequest) (*mdsrpc.CreateFileResponse, error) {
 	return callMDSRPC[mdsrpc.CreateFileResponse](ctx, c, mdsrpc.MethodCreateFile, req)
 }
@@ -98,6 +102,14 @@ func (c *UpstreamClient) VerifyUpload(ctx context.Context, req mdsrpc.VerifyUplo
 
 func (c *UpstreamClient) BuildDownloadPlan(ctx context.Context, req mdsrpc.BuildDownloadPlanRequest) (*mdsrpc.BuildDownloadPlanResponse, error) {
 	return callMDSRPC[mdsrpc.BuildDownloadPlanResponse](ctx, c, mdsrpc.MethodBuildDownloadPlan, req)
+}
+
+func (c *UpstreamClient) GetFile(ctx context.Context, req mdsrpc.GetFileRequest) (*mdsrpc.GetFileResponse, error) {
+	return callMDSRPC[mdsrpc.GetFileResponse](ctx, c, mdsrpc.MethodGetFile, req)
+}
+
+func (c *UpstreamClient) ListChildren(ctx context.Context, req mdsrpc.ListChildrenRequest) (*mdsrpc.ListChildrenResponse, error) {
+	return callMDSRPC[mdsrpc.ListChildrenResponse](ctx, c, mdsrpc.MethodListChildren, req)
 }
 
 func (c *UpstreamClient) ListFileChunks(ctx context.Context, req mdsrpc.ListFileChunksRequest) (*mdsrpc.ListFileChunksResponse, error) {

@@ -1,0 +1,25 @@
+FROM golang:1.25.6-alpine AS build
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/datanode ./cmd/datanode
+
+FROM alpine:3.20
+
+RUN addgroup -S astra \
+    && adduser -S -D -H -u 10001 -G astra astra \
+    && mkdir -p /data/datanode \
+    && chown -R astra:astra /data
+
+COPY --from=build /out/datanode /usr/local/bin/datanode
+
+USER astra
+
+VOLUME ["/data/datanode"]
+EXPOSE 10080
+
+ENTRYPOINT ["/usr/local/bin/datanode"]

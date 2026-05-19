@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -59,6 +60,15 @@ type uploadRequest struct {
 	StorageClass  string                   `json:"storage_class"`
 	SessionID     metadata.UploadSessionID `json:"session_id"`
 	ChunkID       metadata.ChunkID         `json:"chunk_id"`
+}
+
+type createDirectoryRequest struct {
+	InodeID     metadata.InodeID `json:"inode_id"`
+	ParentID    metadata.InodeID `json:"parent_id"`
+	Name        string           `json:"name"`
+	Permissions uint32           `json:"permissions"`
+	Owner       string           `json:"owner"`
+	Group       string           `json:"group"`
 }
 
 type uploadResponse struct {
@@ -112,6 +122,8 @@ func NewHTTPHandler(client *UpstreamClient, registry *metrics.Registry) (http.Ha
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", handler.handleHealth)
 	mux.Handle("/metrics", registry.MetricsHandler())
+	mux.HandleFunc("/directories", handler.handleDirectories)
+	mux.HandleFunc("/directories/", handler.handleDirectoryChildren)
 	mux.HandleFunc("/uploads", handler.handleUploads)
 	mux.HandleFunc("/downloads/", handler.handleDownloads)
 	mux.HandleFunc("/files/", handler.handleFiles)
@@ -151,10 +163,18 @@ func gatewayRouteLabel(path string) string {
 		return "/healthz"
 	case path == "/metrics":
 		return "/metrics"
+	case path == "/directories":
+		return "/directories"
+	case isDirectoryChildrenPath(path):
+		return "/directories/:inodeID/children"
 	case path == "/uploads":
 		return "/uploads"
 	case hasSingleSegmentPath(path, "/downloads/"):
 		return "/downloads/:fileID"
+	case isFileSubresourcePath(path, "chunks"):
+		return "/files/:fileID/chunks"
+	case isFileSubresourcePath(path, "download-plan"):
+		return "/files/:fileID/download-plan"
 	case hasSingleSegmentPath(path, "/files/"):
 		return "/files/:fileID"
 	default:
@@ -168,6 +188,16 @@ func hasSingleSegmentPath(path, prefix string) bool {
 	}
 	tail := strings.TrimPrefix(path, prefix)
 	return tail != "" && !strings.Contains(tail, "/")
+}
+
+func isDirectoryChildrenPath(path string) bool {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	return len(parts) == 3 && parts[0] == "directories" && parts[1] != "" && parts[2] == "children"
+}
+
+func isFileSubresourcePath(path, resource string) bool {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	return len(parts) == 3 && parts[0] == "files" && parts[1] != "" && parts[2] == resource
 }
 
 func (h *httpHandler) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -207,6 +237,88 @@ func (h *httpHandler) handleHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, response)
+}
+
+func (h *httpHandler) handleDirectories(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/directories" {
+		writeError(w, http.StatusNotFound, "not_found", "directory endpoint not found")
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "directories endpoint only supports POST")
+		return
+	}
+	defer r.Body.Close()
+
+	var req createDirectoryRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_argument", fmt.Sprintf("decode directory request: %v", err))
+		return
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		writeError(w, http.StatusBadRequest, "invalid_argument", "directory name is required")
+		return
+	}
+	now := time.Now().UTC()
+	if req.ParentID == "" {
+		req.ParentID = metadata.InodeID(metadata.RootInodeID)
+	}
+	if req.InodeID == "" {
+		req.InodeID = metadata.InodeID(generateID("dir", now))
+	}
+
+	resp, err := h.client.CreateDirectory(r.Context(), mdsrpc.CreateDirectoryRequest{
+		InodeID:     req.InodeID,
+		ParentID:    req.ParentID,
+		Name:        req.Name,
+		Permissions: req.Permissions,
+		Owner:       req.Owner,
+		Group:       req.Group,
+		CreatedAt:   now,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "mds_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, resp)
+}
+
+func (h *httpHandler) handleDirectoryChildren(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) != 3 || parts[0] != "directories" || parts[1] == "" || parts[2] != "children" {
+		writeError(w, http.StatusNotFound, "not_found", "directory endpoint not found")
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "directory children endpoint only supports GET")
+		return
+	}
+
+	limit, err := parseOptionalNonNegativeInt(r.URL.Query().Get("limit"), "limit")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_argument", err.Error())
+		return
+	}
+	offset, err := parseOptionalNonNegativeInt(r.URL.Query().Get("offset"), "offset")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_argument", err.Error())
+		return
+	}
+
+	resp, err := h.client.ListChildren(r.Context(), mdsrpc.ListChildrenRequest{
+		ParentID: metadata.InodeID(parts[1]),
+		Limit:    limit,
+		Offset:   offset,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "mds_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (h *httpHandler) handleUploads(w http.ResponseWriter, r *http.Request) {
@@ -485,17 +597,76 @@ func (h *httpHandler) handleDownloads(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *httpHandler) handleFiles(w http.ResponseWriter, r *http.Request) {
-	fileID := metadata.FileID(strings.TrimPrefix(r.URL.Path, "/files/"))
-	if strings.TrimSpace(string(fileID)) == "" || strings.Contains(string(fileID), "/") {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 2 || len(parts) > 3 || parts[0] != "files" || strings.TrimSpace(parts[1]) == "" {
 		writeError(w, http.StatusNotFound, "not_found", "file endpoint not found")
 		return
 	}
-	if r.Method != http.MethodDelete {
-		w.Header().Set("Allow", http.MethodDelete)
-		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "files endpoint only supports DELETE")
-		return
+	fileID := metadata.FileID(parts[1])
+	if len(parts) == 3 {
+		switch parts[2] {
+		case "chunks":
+			h.handleFileChunks(w, r, fileID)
+			return
+		case "download-plan":
+			h.handleFileDownloadPlan(w, r, fileID)
+			return
+		default:
+			writeError(w, http.StatusNotFound, "not_found", "file endpoint not found")
+			return
+		}
 	}
 
+	switch r.Method {
+	case http.MethodGet:
+		h.getFile(w, r, fileID)
+	case http.MethodDelete:
+		h.deleteFile(w, r, fileID)
+	default:
+		w.Header().Set("Allow", "GET, DELETE")
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "file endpoint supports GET and DELETE")
+		return
+	}
+}
+
+func (h *httpHandler) getFile(w http.ResponseWriter, r *http.Request, fileID metadata.FileID) {
+	resp, err := h.client.GetFile(r.Context(), mdsrpc.GetFileRequest{ID: fileID})
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "mds_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *httpHandler) handleFileChunks(w http.ResponseWriter, r *http.Request, fileID metadata.FileID) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "file chunks endpoint only supports GET")
+		return
+	}
+	resp, err := h.client.ListFileChunks(r.Context(), mdsrpc.ListFileChunksRequest{FileID: fileID})
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "mds_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *httpHandler) handleFileDownloadPlan(w http.ResponseWriter, r *http.Request, fileID metadata.FileID) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "file download plan endpoint only supports GET")
+		return
+	}
+	resp, err := h.client.BuildDownloadPlan(r.Context(), mdsrpc.BuildDownloadPlanRequest{FileID: fileID})
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "mds_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *httpHandler) deleteFile(w http.ResponseWriter, r *http.Request, fileID metadata.FileID) {
 	requestID := logging.RequestIDFromContext(r.Context())
 	result := "failure"
 	defer func() {
@@ -539,6 +710,20 @@ func (h *httpHandler) handleFiles(w http.ResponseWriter, r *http.Request) {
 	}
 	result = "success"
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func parseOptionalNonNegativeInt(raw, name string) (int, error) {
+	if strings.TrimSpace(raw) == "" {
+		return 0, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be an integer", name)
+	}
+	if value < 0 {
+		return 0, fmt.Errorf("%s cannot be negative", name)
+	}
+	return value, nil
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {
