@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: astra-postgres
+  namespace: astrastorage
+  labels:
+    app.kubernetes.io/name: astra-postgres
+    app.kubernetes.io/component: metadata-database
+    app.kubernetes.io/part-of: astrastorage
+spec:
+  serviceName: astra-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: astra-postgres
+      app.kubernetes.io/part-of: astrastorage
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: astra-postgres
+        app.kubernetes.io/component: metadata-database
+        app.kubernetes.io/part-of: astrastorage
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: astra-postgres-config
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: astra-postgres
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: astra-postgres
+                  key: password
+            - name: PGDATA
+              valueFrom:
+                configMapKeyRef:
+                  name: astra-postgres-config
+                  key: PGDATA
+          ports:
+            - name: postgres
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - astra
+                - -d
+                - astra
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - astra
+                - -d
+                - astra
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+        labels:
+          app.kubernetes.io/name: astra-postgres
+          app.kubernetes.io/component: metadata-database
+          app.kubernetes.io/part-of: astrastorage
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 5Gi

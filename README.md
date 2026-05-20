@@ -236,6 +236,7 @@ Kubernetes manifests 位于 [deploy/k8s](/home/qingke/AstraStorage/deploy/k8s)�
 当前包含：
 
 - `base`: `astrastorage` namespace
+- `postgres`: PostgreSQL StatefulSet + Service + Secret + ConfigMap + PVC
 - `mds`: MDS Deployment + Service
 - `datanode`: Datanode Deployment + Service
 - `gateway`: Gateway Deployment + Service
@@ -245,6 +246,7 @@ Kubernetes manifests 位于 [deploy/k8s](/home/qingke/AstraStorage/deploy/k8s)�
 
 ```bash
 kubectl apply -k deploy/k8s/base
+kubectl apply -k deploy/k8s/postgres
 kubectl apply -k deploy/k8s/mds
 kubectl apply -k deploy/k8s/datanode
 kubectl apply -k deploy/k8s/gateway
@@ -271,11 +273,11 @@ docker build -f deploy/docker/app/Dockerfile.gateway -t astrastorage/gateway:loc
 
 当前 K8s 配置仍是开发拓扑：
 
-- MDS 默认使用 memory backend
+- MDS 默认使用单副本 PostgreSQL StatefulSet 作为 metadata backend
 - Datanode 默认使用 `Deployment + emptyDir`
 - 还没有提供统一镜像构建脚本
 
-这三个点是把项目推进到可交付 PoC 前最重要的缺口。更多说明见 [kubernetes-deployment.md](/home/qingke/AstraStorage/docs/architecture/kubernetes-deployment.md)。
+剩余最重要的 PoC 缺口是 datanode 持久化和统一 smoke 脚本。更多说明见 [kubernetes-deployment.md](/home/qingke/AstraStorage/docs/architecture/kubernetes-deployment.md)。
 
 ## PostgreSQL Integration Test
 
@@ -334,9 +336,8 @@ GitHub Actions 配置位于 [.github/workflows/ci.yml](/home/qingke/AstraStorage
 当前项目要成为可交付 PoC，优先补齐：
 
 1. 统一镜像构建和 kind/minikube 加载脚本。
-2. Kubernetes 默认切到 PostgreSQL-backed MDS。
-3. Datanode 默认切到 `StatefulSet + PVC`。
-4. 端到端 PoC smoke 脚本，覆盖上传、下载、校验、删除和指标检查。
-5. `content_base64` 上传路径降级为 smoke/small-file path，并设计正式流式上传。
+2. Datanode 默认切到 `StatefulSet + PVC`。
+3. 端到端 PoC smoke 脚本，覆盖上传、下载、校验、删除和指标检查。
+4. `content_base64` 上传路径降级为 smoke/small-file path，并设计正式流式上传。
 
 这些方向与 [scope-reduction-plan.md](/home/qingke/AstraStorage/docs/architecture/scope-reduction-plan.md) 保持一致。

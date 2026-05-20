@@ -6,18 +6,20 @@ This document describes the first Kubernetes deployment foundation for AstraStor
 
 The first Kubernetes target is a single-node, single-replica development topology:
 
-- one `mds` Deployment using the in-memory metadata backend
+- one PostgreSQL StatefulSet used as the MDS metadata backend
+- one `mds` Deployment using the PostgreSQL metadata backend
 - one `datanode` Deployment using `emptyDir`
 - one `gateway` Deployment
 - Prometheus Operator integration through `ServiceMonitor` and `PrometheusRule`
 
-This is intentionally not a production deployment. It is meant to validate Kubernetes networking, probes, service discovery, metrics scraping, and the minimal upload/download path.
+This is intentionally not a production deployment. It is meant to validate Kubernetes networking, probes, service discovery, metadata persistence, metrics scraping, and the minimal upload/download path.
 
 ## Layout
 
 Kubernetes manifests live under:
 
 - [base](/home/qingke/AstraStorage/deploy/k8s/base)
+- [postgres](/home/qingke/AstraStorage/deploy/k8s/postgres)
 - [mds](/home/qingke/AstraStorage/deploy/k8s/mds)
 - [datanode](/home/qingke/AstraStorage/deploy/k8s/datanode)
 - [gateway](/home/qingke/AstraStorage/deploy/k8s/gateway)
@@ -47,6 +49,7 @@ Apply the manifests in order:
 
 ```bash
 kubectl apply -k deploy/k8s/base
+kubectl apply -k deploy/k8s/postgres
 kubectl apply -k deploy/k8s/mds
 kubectl apply -k deploy/k8s/datanode
 kubectl apply -k deploy/k8s/gateway
@@ -57,6 +60,34 @@ Check workload status:
 ```bash
 kubectl get pods -n astrastorage
 kubectl get svc -n astrastorage
+kubectl get pvc -n astrastorage
+```
+
+Wait for PostgreSQL before starting MDS validation:
+
+```bash
+kubectl -n astrastorage rollout status statefulset/astra-postgres
+kubectl -n astrastorage rollout status deployment/astra-mds
+```
+
+## PostgreSQL Metadata Backend
+
+The PostgreSQL manifests create:
+
+- `Secret/astra-postgres` for the database username, password, and MDS DSN
+- `ConfigMap/astra-postgres-config` for non-sensitive database and MDS pool settings
+- `Service/astra-postgres` for stable in-cluster access on port `5432`
+- `StatefulSet/astra-postgres` for the PostgreSQL process
+- one `ReadWriteOnce` PVC through `volumeClaimTemplates`
+
+MDS reads `MDS_POSTGRES_DSN` from `Secret/astra-postgres` and runs migrations during startup. This means MDS metadata survives MDS Pod restarts and PostgreSQL Pod restarts as long as the PVC is retained.
+
+The default credentials are PoC-only:
+
+```text
+username: astra
+password: astra-dev
+database: astra
 ```
 
 ## Validate Services
@@ -152,12 +183,12 @@ astrastorage_datanode_chunk_put_total{namespace="astrastorage"}
 
 This first version does not include:
 
-- PostgreSQL-backed MDS
 - Redis
 - RabbitMQ
 - etcd-backed leader election
 - multi-replica MDS
 - StatefulSet and PVC-backed datanodes
+- HA PostgreSQL
 - Ingress
 - NetworkPolicy
 - PodDisruptionBudget

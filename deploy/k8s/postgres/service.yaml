@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: astra-postgres
+  namespace: astrastorage
+  labels:
+    app.kubernetes.io/name: astra-postgres
+    app.kubernetes.io/component: metadata-database
+    app.kubernetes.io/part-of: astrastorage
+spec:
+  selector:
+    app.kubernetes.io/name: astra-postgres
+    app.kubernetes.io/part-of: astrastorage
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
