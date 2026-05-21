@@ -15,6 +15,12 @@ The Kubernetes manifests in [deploy/k8s](/home/qingke/AstraStorage/deploy/k8s) r
 From the repository root:
 
 ```bash
+bash scripts/build-images.sh
+```
+
+Equivalent manual commands:
+
+```bash
 docker build -f deploy/docker/app/Dockerfile.mds -t astrastorage/mds:local .
 docker build -f deploy/docker/app/Dockerfile.datanode -t astrastorage/datanode:local .
 docker build -f deploy/docker/app/Dockerfile.gateway -t astrastorage/gateway:local .

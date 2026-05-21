@@ -266,9 +266,7 @@ astrastorage/gateway:local
 构建：
 
 ```bash
-docker build -f deploy/docker/app/Dockerfile.mds -t astrastorage/mds:local .
-docker build -f deploy/docker/app/Dockerfile.datanode -t astrastorage/datanode:local .
-docker build -f deploy/docker/app/Dockerfile.gateway -t astrastorage/gateway:local .
+bash scripts/build-images.sh
 ```
 
 当前 K8s 配置仍是开发拓扑：
