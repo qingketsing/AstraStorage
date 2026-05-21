@@ -88,7 +88,7 @@ http://127.0.0.1:9093
 Run the smoke check:
 
 ```bash
-bash scripts/monitoring-smoke.sh
+bash scripts/smoke/monitoring-smoke.sh
 ```
 
 ## Useful Queries

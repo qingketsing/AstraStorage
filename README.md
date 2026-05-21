@@ -206,7 +206,7 @@ Datanode: http://127.0.0.1:10080/metrics
 Gateway:  http://127.0.0.1:11080/metrics
 ```
 
-本地 Prometheus 和 Alertmanager 配置位于 [deploy/docker/monitor](/home/qingke/AstraStorage/deploy/docker/monitor)。
+本地 Prometheus 和 Alertmanager 配置位于 [deploy/docker/monitor](/home/qingke/AstraStorage/deploy/docker/monitor)，部署目录总览见 [deploy/README.md](/home/qingke/AstraStorage/deploy/README.md)。
 
 启动：
 
@@ -224,14 +224,14 @@ Alertmanager: http://127.0.0.1:9093
 运行 smoke check：
 
 ```bash
-bash scripts/monitoring-smoke.sh
+bash scripts/smoke/monitoring-smoke.sh
 ```
 
 更多说明见 [prometheus-monitoring.md](/home/qingke/AstraStorage/docs/architecture/prometheus-monitoring.md) 和 [observability-demo.md](/home/qingke/AstraStorage/docs/architecture/observability-demo.md)。
 
 ## Kubernetes
 
-Kubernetes manifests 位于 [deploy/k8s](/home/qingke/AstraStorage/deploy/k8s)。
+Kubernetes manifests 位于 [deploy/k8s](/home/qingke/AstraStorage/deploy/k8s)，细分目录说明见 [deploy/k8s/README.md](/home/qingke/AstraStorage/deploy/k8s/README.md)。
 
 当前包含：
 
@@ -317,6 +317,8 @@ GitHub Actions 配置位于 [.github/workflows/ci.yml](/home/qingke/AstraStorage
 - 运行 `go build ./...`
 
 ## Documentation Map
+
+文档目录说明见 [docs/README.md](/home/qingke/AstraStorage/docs/README.md)。
 
 建议阅读顺序：
 

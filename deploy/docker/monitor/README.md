@@ -67,5 +67,5 @@ http://127.0.0.1:9093
 You can also run the smoke check after Prometheus and Alertmanager are up:
 
 ```bash
-bash scripts/monitoring-smoke.sh
+bash scripts/smoke/monitoring-smoke.sh
 ```
