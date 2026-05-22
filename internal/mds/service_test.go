@@ -268,6 +268,69 @@ func TestServiceCommitChunk_WritesChunkAndAdvancesProgress(t *testing.T) {
 	}
 }
 
+func TestServiceCommitChunk_FillsMissingReplicaIdentity(t *testing.T) {
+	repo := store.NewMemoryRepository()
+	svc := mustNewService(t, repo)
+	ctx := context.Background()
+	now := time.Now()
+
+	mustCreateRoot(t, ctx, repo, now)
+	_, err := svc.CreateFile(ctx, mds.CreateFileRequest{
+		InodeID:   "bad-replica-inode",
+		FileID:    "bad-replica-file",
+		ParentID:  metadata.InodeID(metadata.RootInodeID),
+		Name:      "bad.txt",
+		Size:      128,
+		CreatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("create file: %v", err)
+	}
+	_, err = svc.StartUpload(ctx, mds.StartUploadRequest{
+		SessionID:    "session-bad-replica",
+		FileID:       "bad-replica-file",
+		ExpectedSize: 128,
+		CreatedAt:    now.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("start upload: %v", err)
+	}
+
+	chunk, err := svc.CommitChunk(ctx, mds.CommitChunkRequest{
+		SessionID: "session-bad-replica",
+		ChunkID:   "bad-replica-chunk-0",
+		Index:     0,
+		Offset:    0,
+		Size:      128,
+		Replicas: metadata.ReplicaSet{
+			"node-a": {
+				FileID:     "bad-replica-file",
+				ChunkID:    "bad-replica-chunk-0",
+				NodeID:     "node-a",
+				Role:       metadata.ReplicaRolePrimary,
+				State:      metadata.ReplicaStateReady,
+				StoredSize: 128,
+				CreatedAt:  now.Add(2 * time.Minute),
+				UpdatedAt:  now.Add(2 * time.Minute),
+			},
+		},
+		CommittedAt: now.Add(2 * time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("commit chunk: %v", err)
+	}
+	replica, ok := chunk.Replicas["node-a"]
+	if !ok {
+		t.Fatalf("expected chunk replica on node-a, got %#v", chunk.Replicas)
+	}
+	if replica.ID != "bad-replica-chunk-0@node-a" {
+		t.Fatalf("expected replica id to be backfilled, got %#v", replica)
+	}
+	if replica.FileID != "bad-replica-file" || replica.ChunkID != "bad-replica-chunk-0" || replica.NodeID != "node-a" {
+		t.Fatalf("expected replica identity to be normalized, got %#v", replica)
+	}
+}
+
 func TestServiceCompleteUpload_MarksFileSessionAndChunksVerifying(t *testing.T) {
 	repo := store.NewMemoryRepository()
 	svc := mustNewService(t, repo)

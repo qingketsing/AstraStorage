@@ -1567,11 +1567,20 @@ func TestHTTPHandler_UploadFlowWithReplicaForwarding(t *testing.T) {
 	if replicas["node-1"].Role != metadata.ReplicaRolePrimary || replicas["node-1"].State != metadata.ReplicaStateReady {
 		t.Fatalf("unexpected primary replica: %#v", replicas["node-1"])
 	}
+	if replicas["node-1"].ID != replicaID("chunk-1", "node-1") || replicas["node-1"].FileID != "file-1" || replicas["node-1"].ChunkID != "chunk-1" {
+		t.Fatalf("expected primary replica identity fields to be populated, got %#v", replicas["node-1"])
+	}
 	if replicas["node-2"].Role != metadata.ReplicaRoleSecondary || replicas["node-2"].State != metadata.ReplicaStateReady {
 		t.Fatalf("unexpected ready secondary replica: %#v", replicas["node-2"])
 	}
+	if replicas["node-2"].ID != replicaID("chunk-1", "node-2") || replicas["node-2"].FileID != "file-1" || replicas["node-2"].ChunkID != "chunk-1" {
+		t.Fatalf("expected ready secondary replica identity fields to be populated, got %#v", replicas["node-2"])
+	}
 	if replicas["node-3"].Role != metadata.ReplicaRoleSecondary || replicas["node-3"].State != metadata.ReplicaStatePending {
 		t.Fatalf("unexpected pending secondary replica: %#v", replicas["node-3"])
+	}
+	if replicas["node-3"].ID != replicaID("chunk-1", "node-3") || replicas["node-3"].FileID != "file-1" || replicas["node-3"].ChunkID != "chunk-1" {
+		t.Fatalf("expected pending secondary replica identity fields to be populated, got %#v", replicas["node-3"])
 	}
 }
 

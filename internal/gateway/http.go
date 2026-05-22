@@ -461,7 +461,7 @@ func (h *httpHandler) handleUploads(w http.ResponseWriter, r *http.Request) {
 			}
 			replicaResults = replicateResp
 		}
-		replicas := buildChunkReplicas(target, replicaTargets, replicaResults, chunkChecksum, int64(len(chunkData)), now)
+		replicas := buildChunkReplicas(req.FileID, chunkID, target, replicaTargets, replicaResults, chunkChecksum, int64(len(chunkData)), now)
 		if _, err := h.client.CommitChunk(r.Context(), mdsrpc.CommitChunkRequest{
 			SessionID:   req.SessionID,
 			ChunkID:     chunkID,
@@ -773,9 +773,12 @@ func chunkIDForIndex(baseID metadata.ChunkID, index int64, totalChunks int) meta
 	return metadata.ChunkID(fmt.Sprintf("%s-%d", baseID, index))
 }
 
-func buildChunkReplicas(primary mdsrpc.UploadTarget, secondaryTargets []mdsrpc.UploadTarget, results []replicaWriteResult, checksum metadata.Checksum, size int64, now time.Time) metadata.ReplicaSet {
+func buildChunkReplicas(fileID metadata.FileID, chunkID metadata.ChunkID, primary mdsrpc.UploadTarget, secondaryTargets []mdsrpc.UploadTarget, results []replicaWriteResult, checksum metadata.Checksum, size int64, now time.Time) metadata.ReplicaSet {
 	replicas := metadata.ReplicaSet{
 		primary.NodeID: {
+			ID:         replicaID(chunkID, primary.NodeID),
+			FileID:     fileID,
+			ChunkID:    chunkID,
 			NodeID:     primary.NodeID,
 			Role:       metadata.ReplicaRolePrimary,
 			State:      metadata.ReplicaStateReady,
@@ -802,6 +805,9 @@ func buildChunkReplicas(primary mdsrpc.UploadTarget, secondaryTargets []mdsrpc.U
 			verifiedAt = &now
 		}
 		replicas[target.NodeID] = metadata.ReplicaMetadata{
+			ID:         replicaID(chunkID, target.NodeID),
+			FileID:     fileID,
+			ChunkID:    chunkID,
 			NodeID:     target.NodeID,
 			Role:       metadata.ReplicaRoleSecondary,
 			State:      state,
@@ -813,6 +819,10 @@ func buildChunkReplicas(primary mdsrpc.UploadTarget, secondaryTargets []mdsrpc.U
 		}
 	}
 	return replicas
+}
+
+func replicaID(chunkID metadata.ChunkID, nodeID metadata.NodeID) string {
+	return fmt.Sprintf("%s@%s", chunkID, nodeID)
 }
 
 func toDataNodeReplicaTargets(targets []mdsrpc.UploadTarget) []datanode.ReplicaTarget {

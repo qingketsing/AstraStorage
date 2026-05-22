@@ -156,6 +156,10 @@ func (s *Service) CommitChunk(ctx context.Context, req CommitChunkRequest) (*met
 		if file.LatestUploadSessionID != "" && file.LatestUploadSessionID != session.ID {
 			return fmt.Errorf("%w: upload session %q is not the latest session for file %q", store.ErrConflict, session.ID, file.ID)
 		}
+		replicas, err := normalizeChunkReplicas(req.Replicas, file.ID, req.ChunkID)
+		if err != nil {
+			return err
+		}
 
 		when := requestTime(req.CommittedAt)
 		chunkStatus := req.Status
@@ -175,8 +179,8 @@ func (s *Service) CommitChunk(ctx context.Context, req CommitChunkRequest) (*met
 			Status:        chunkStatus,
 			Checksum:      derefChecksum(req.Checksum),
 			ReplicaPolicy: replicaPolicy,
-			ReplicaCount:  len(req.Replicas),
-			Replicas:      cloneReplicaSet(req.Replicas),
+			ReplicaCount:  len(replicas),
+			Replicas:      replicas,
 			CreatedAt:     when,
 			UpdatedAt:     when,
 		}
@@ -641,6 +645,41 @@ func validateCommitChunkRequest(req CommitChunkRequest) error {
 		return err
 	}
 	return nil
+}
+
+func normalizeChunkReplicas(replicas metadata.ReplicaSet, fileID metadata.FileID, chunkID metadata.ChunkID) (metadata.ReplicaSet, error) {
+	if replicas == nil {
+		return nil, nil
+	}
+	normalized := make(metadata.ReplicaSet, len(replicas))
+	for nodeID, replica := range replicas {
+		if nodeID == "" {
+			return nil, fmt.Errorf("%w: replica node id is required", store.ErrInvalidArgument)
+		}
+		if replica.NodeID == "" {
+			replica.NodeID = nodeID
+		}
+		if replica.NodeID != nodeID {
+			return nil, fmt.Errorf("%w: replica node id %q does not match key %q", store.ErrInvalidArgument, replica.NodeID, nodeID)
+		}
+		if replica.FileID == "" {
+			replica.FileID = fileID
+		}
+		if replica.FileID != fileID {
+			return nil, fmt.Errorf("%w: replica file id %q does not match file %q", store.ErrInvalidArgument, replica.FileID, fileID)
+		}
+		if replica.ChunkID == "" {
+			replica.ChunkID = chunkID
+		}
+		if replica.ChunkID != chunkID {
+			return nil, fmt.Errorf("%w: replica chunk id %q does not match chunk %q", store.ErrInvalidArgument, replica.ChunkID, chunkID)
+		}
+		if replica.ID == "" {
+			replica.ID = fmt.Sprintf("%s@%s", chunkID, nodeID)
+		}
+		normalized[nodeID] = replica
+	}
+	return normalized, nil
 }
 
 func validateCompleteUploadRequest(req CompleteUploadRequest) error {
