@@ -41,7 +41,25 @@ astrastorage/datanode:local
 astrastorage/gateway:local
 ```
 
-For local `kind` clusters, build and load these images before applying the manifests.
+For local `kind` or `minikube` clusters, build and load these images into the cluster node before applying the manifests.
+
+For `minikube`:
+
+```bash
+minikube image load astrastorage/mds:local
+minikube image load astrastorage/datanode:local
+minikube image load astrastorage/gateway:local
+```
+
+For `kind`:
+
+```bash
+kind load docker-image astrastorage/mds:local
+kind load docker-image astrastorage/datanode:local
+kind load docker-image astrastorage/gateway:local
+```
+
+If you use a remote registry instead, push the images first and update the manifests to reference that registry.
 
 ## Deploy
 

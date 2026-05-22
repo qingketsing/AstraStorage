@@ -13,3 +13,5 @@ This directory holds project documentation.
 For current project understanding, start with `architecture/`.
 
 For historical planning context, use `superpowers/`.
+
+For a delivery-oriented summary of startup steps, demo scope, and current boundaries, read [poc.md](/home/qingke/AstraStorage/docs/poc.md).

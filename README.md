@@ -269,11 +269,27 @@ astrastorage/gateway:local
 bash scripts/build-images.sh
 ```
 
+如果使用本地 `minikube` 集群，还需要先把镜像导入节点：
+
+```bash
+minikube image load astrastorage/mds:local
+minikube image load astrastorage/datanode:local
+minikube image load astrastorage/gateway:local
+```
+
+如果使用 `kind`，则改用：
+
+```bash
+kind load docker-image astrastorage/mds:local
+kind load docker-image astrastorage/datanode:local
+kind load docker-image astrastorage/gateway:local
+```
+
 当前 K8s 配置仍是开发拓扑：
 
 - MDS 默认使用单副本 PostgreSQL StatefulSet 作为 metadata backend
 - Datanode 默认使用 `Deployment + emptyDir`
-- 还没有提供统一镜像构建脚本
+- 当前文档和脚本默认面向本地镜像装载，不是远端镜像仓库发布流
 
 剩余最重要的 PoC 缺口是 datanode 持久化和统一 smoke 脚本。更多说明见 [kubernetes-deployment.md](/home/qingke/AstraStorage/docs/architecture/kubernetes-deployment.md)。
 
@@ -317,6 +333,8 @@ GitHub Actions 配置位于 [.github/workflows/ci.yml](/home/qingke/AstraStorage
 ## Documentation Map
 
 文档目录说明见 [docs/README.md](/home/qingke/AstraStorage/docs/README.md)。
+
+如果你要看一份面向演示和交付的简版说明，直接看 [poc.md](/home/qingke/AstraStorage/docs/poc.md)。
 
 建议阅读顺序：
 
