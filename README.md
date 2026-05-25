@@ -291,7 +291,7 @@ kind load docker-image astrastorage/gateway:local
 - Datanode 默认使用单副本 `StatefulSet + PVC`
 - 当前文档和脚本默认面向本地镜像装载，不是远端镜像仓库发布流
 
-剩余最重要的 PoC 缺口是 datanode 多副本拓扑与统一 smoke 脚本。更多说明见 [kubernetes-deployment.md](/home/qingke/AstraStorage/docs/architecture/kubernetes-deployment.md)。
+剩余最重要的 PoC 缺口是 datanode 多副本拓扑。核心 PoC 冒烟脚本见 [poc-smoke.sh](/home/qingke/AstraStorage/scripts/poc-smoke.sh)，更多说明见 [kubernetes-deployment.md](/home/qingke/AstraStorage/docs/architecture/kubernetes-deployment.md)。
 
 ## PostgreSQL Integration Test
 

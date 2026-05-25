@@ -119,7 +119,7 @@ The current PoC is intentionally narrow. Known limits:
 - PostgreSQL is single-replica and PoC-only, not HA.
 - Redis, RabbitMQ, and etcd are not part of the default PoC startup path.
 - The project has monitoring foundations, but not a complete dashboard and alert delivery workflow.
-- The current repository does not yet provide one end-to-end PoC acceptance script that provisions the full cluster and validates the whole flow.
+- The repository now includes [poc-smoke.sh](/home/qingke/AstraStorage/scripts/poc-smoke.sh) for the core gateway flow, but it assumes the environment is already running and does not provision the cluster for you.
 
 ## 7. What This PoC Proves
 
