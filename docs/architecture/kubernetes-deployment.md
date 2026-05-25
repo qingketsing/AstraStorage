@@ -88,6 +88,8 @@ kubectl -n astrastorage rollout status statefulset/astra-postgres
 kubectl -n astrastorage rollout status deployment/astra-mds
 ```
 
+The `mds` manifest now includes an `initContainer` that waits for PostgreSQL readiness, and the `datanode` manifest includes an `initContainer` that waits for `mds /healthz`. This removes the cold-start CrashLoopBackOff seen when the cluster comes up before its dependencies are ready.
+
 ## PostgreSQL Metadata Backend
 
 The PostgreSQL manifests create:
@@ -133,6 +135,12 @@ Check:
 
 ```bash
 curl http://127.0.0.1:11080/healthz
+```
+
+Run the end-to-end PoC smoke check against the forwarded gateway:
+
+```bash
+bash scripts/poc-smoke.sh
 ```
 
 ## Prometheus Operator Integration

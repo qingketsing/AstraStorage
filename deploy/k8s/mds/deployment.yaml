@@ -20,6 +20,18 @@ spec:
         app.kubernetes.io/component: metadata-service
         app.kubernetes.io/part-of: astrastorage
     spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h astra-postgres.astrastorage.svc.cluster.local -p 5432 -U astra -d astra; do
+                echo "waiting for PostgreSQL"
+                sleep 2
+              done
       containers:
         - name: mds
           image: astrastorage/mds:local

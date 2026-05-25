@@ -289,6 +289,7 @@ kind load docker-image astrastorage/gateway:local
 
 - MDS 默认使用单副本 PostgreSQL StatefulSet 作为 metadata backend
 - Datanode 默认使用单副本 `StatefulSet + PVC`
+- `mds` 和 `datanode` 通过 `initContainer` 等待上游依赖，降低集群冷启动时的瞬时 CrashLoop
 - 当前文档和脚本默认面向本地镜像装载，不是远端镜像仓库发布流
 
 剩余最重要的 PoC 缺口是 datanode 多副本拓扑。核心 PoC 冒烟脚本见 [poc-smoke.sh](/home/qingke/AstraStorage/scripts/poc-smoke.sh)，更多说明见 [kubernetes-deployment.md](/home/qingke/AstraStorage/docs/architecture/kubernetes-deployment.md)。
