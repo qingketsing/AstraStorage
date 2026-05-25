@@ -92,7 +92,7 @@ Current Kubernetes defaults:
 - `mds` uses `postgres` as the default metadata backend
 - `mds` reads `MDS_POSTGRES_DSN` from the in-cluster PostgreSQL secret
 - PostgreSQL runs as a single-replica `StatefulSet`
-- `datanode` still runs as `Deployment + emptyDir`
+- `datanode` runs as a single-replica `StatefulSet` with a PVC-backed data directory
 
 Detailed Kubernetes notes live in:
 
@@ -115,7 +115,7 @@ Recommended PoC flow:
 The current PoC is intentionally narrow. Known limits:
 
 - `POST /uploads` is still `content_base64` based and suited to small files, smoke tests, and demos.
-- The Kubernetes `datanode` shape is still `Deployment + emptyDir`, so datanode data is not yet restart-safe by default.
+- The default Kubernetes `datanode` is now restart-safe for a single replica, but it is not yet a multi-datanode persistent topology with Pod-specific advertise identities.
 - PostgreSQL is single-replica and PoC-only, not HA.
 - Redis, RabbitMQ, and etcd are not part of the default PoC startup path.
 - The project has monitoring foundations, but not a complete dashboard and alert delivery workflow.
@@ -133,6 +133,6 @@ This PoC is already enough to prove:
 It does not yet prove:
 
 - production-grade upload API design
-- restart-safe datanode persistence in Kubernetes
+- multi-datanode persistent storage behavior in Kubernetes
 - multi-MDS HA behavior in Kubernetes
 - production security, ingress, or network isolation

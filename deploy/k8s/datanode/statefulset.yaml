@@ -1,5 +1,5 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: astra-datanode
   namespace: astrastorage
@@ -8,6 +8,7 @@ metadata:
     app.kubernetes.io/component: datanode
     app.kubernetes.io/part-of: astrastorage
 spec:
+  serviceName: astra-datanode-headless
   replicas: 1
   selector:
     matchLabels:
@@ -60,6 +61,16 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
-      volumes:
-        - name: datanode-data
-          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: datanode-data
+        labels:
+          app.kubernetes.io/name: astra-datanode
+          app.kubernetes.io/component: datanode
+          app.kubernetes.io/part-of: astrastorage
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi

@@ -288,10 +288,10 @@ kind load docker-image astrastorage/gateway:local
 当前 K8s 配置仍是开发拓扑：
 
 - MDS 默认使用单副本 PostgreSQL StatefulSet 作为 metadata backend
-- Datanode 默认使用 `Deployment + emptyDir`
+- Datanode 默认使用单副本 `StatefulSet + PVC`
 - 当前文档和脚本默认面向本地镜像装载，不是远端镜像仓库发布流
 
-剩余最重要的 PoC 缺口是 datanode 持久化和统一 smoke 脚本。更多说明见 [kubernetes-deployment.md](/home/qingke/AstraStorage/docs/architecture/kubernetes-deployment.md)。
+剩余最重要的 PoC 缺口是 datanode 多副本拓扑与统一 smoke 脚本。更多说明见 [kubernetes-deployment.md](/home/qingke/AstraStorage/docs/architecture/kubernetes-deployment.md)。
 
 ## PostgreSQL Integration Test
 

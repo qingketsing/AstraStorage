@@ -8,7 +8,7 @@ The first Kubernetes target is a single-node, single-replica development topolog
 
 - one PostgreSQL StatefulSet used as the MDS metadata backend
 - one `mds` Deployment using the PostgreSQL metadata backend
-- one `datanode` Deployment using `emptyDir`
+- one single-replica `datanode` StatefulSet using a PVC
 - one `gateway` Deployment
 - Prometheus Operator integration through `ServiceMonitor` and `PrometheusRule`
 
@@ -205,7 +205,7 @@ This first version does not include:
 - RabbitMQ
 - etcd-backed leader election
 - multi-replica MDS
-- StatefulSet and PVC-backed datanodes
+- multi-replica or Pod-identity-aware datanode topology
 - HA PostgreSQL
 - Ingress
 - NetworkPolicy
