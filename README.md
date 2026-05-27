@@ -335,18 +335,21 @@ GitHub Actions 配置位于 [.github/workflows/ci.yml](/home/qingke/AstraStorage
 
 文档目录说明见 [docs/README.md](/home/qingke/AstraStorage/docs/README.md)。
 
+如果你要看一份项目功能介绍，直接看 [project-features.md](/home/qingke/AstraStorage/docs/project-features.md)。
+
 如果你要看一份面向演示和交付的简版说明，直接看 [poc.md](/home/qingke/AstraStorage/docs/poc.md)。
 
 建议阅读顺序：
 
-1. [system-overview.md](/home/qingke/AstraStorage/docs/architecture/system-overview.md)
-2. [mds-overview.md](/home/qingke/AstraStorage/docs/architecture/mds-overview.md)
-3. [mds-invariants.md](/home/qingke/AstraStorage/docs/architecture/mds-invariants.md)
-4. [manual-testing.md](/home/qingke/AstraStorage/docs/architecture/manual-testing.md)
-5. [prometheus-monitoring.md](/home/qingke/AstraStorage/docs/architecture/prometheus-monitoring.md)
-6. [kubernetes-deployment.md](/home/qingke/AstraStorage/docs/architecture/kubernetes-deployment.md)
-7. [scope-reduction-plan.md](/home/qingke/AstraStorage/docs/architecture/scope-reduction-plan.md)
-8. [technical-debt-roadmap.md](/home/qingke/AstraStorage/docs/architecture/technical-debt-roadmap.md)
+1. [project-features.md](/home/qingke/AstraStorage/docs/project-features.md)
+2. [system-overview.md](/home/qingke/AstraStorage/docs/architecture/system-overview.md)
+3. [mds-overview.md](/home/qingke/AstraStorage/docs/architecture/mds-overview.md)
+4. [mds-invariants.md](/home/qingke/AstraStorage/docs/architecture/mds-invariants.md)
+5. [manual-testing.md](/home/qingke/AstraStorage/docs/architecture/manual-testing.md)
+6. [prometheus-monitoring.md](/home/qingke/AstraStorage/docs/architecture/prometheus-monitoring.md)
+7. [kubernetes-deployment.md](/home/qingke/AstraStorage/docs/architecture/kubernetes-deployment.md)
+8. [scope-reduction-plan.md](/home/qingke/AstraStorage/docs/architecture/scope-reduction-plan.md)
+9. [technical-debt-roadmap.md](/home/qingke/AstraStorage/docs/architecture/technical-debt-roadmap.md)
 
 如果需要重启 CLI 后让新会话继续接手当前项目，请使用 [session-handoff.md](/home/qingke/AstraStorage/docs/architecture/session-handoff.md)。
 

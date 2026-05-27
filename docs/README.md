@@ -10,6 +10,8 @@ This directory holds project documentation.
 
 ## Where To Start
 
+For a feature-level introduction of what the project can do today, read [project-features.md](/home/qingke/AstraStorage/docs/project-features.md).
+
 For current project understanding, start with `architecture/`.
 
 For historical planning context, use `superpowers/`.
