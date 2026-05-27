@@ -12,6 +12,8 @@ This directory holds project documentation.
 
 For a feature-level introduction of what the project can do today, read [project-features.md](/home/qingke/AstraStorage/docs/project-features.md).
 
+For the current system architecture, component responsibilities, data flow, replication, and recovery model, read [system-architecture.md](/home/qingke/AstraStorage/docs/architecture/system-architecture.md).
+
 For current project understanding, start with `architecture/`.
 
 For historical planning context, use `superpowers/`.
