@@ -11,5 +11,5 @@ This directory holds operational and verification scripts.
 ## Current Scripts
 
 - `build-images.sh`: local application image build entrypoint
-- `poc-smoke.sh`: checks health, upload, metadata read, download, content equality, delete, and delete confirmation
+- `poc-smoke.sh`: checks health, repeated upload, metadata read, chunk listing, download plan, download, content equality, delete, and delete confirmation
 - `smoke/monitoring-smoke.sh`: checks Prometheus and Alertmanager readiness plus key AstraStorage metrics

@@ -5,6 +5,7 @@ package e2e_test
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -26,10 +27,11 @@ func TestPoCSmokeScript_ExercisesCoreGatewayFlow(t *testing.T) {
 	}
 
 	var (
-		mu           sync.Mutex
-		uploaded     []byte
-		uploadCalled bool
-		deleted      bool
+		mu        sync.Mutex
+		nextID    = 1
+		uploads   = map[string][]byte{}
+		deleted   = map[string]bool{}
+		nameByID  = map[string]string{}
 	)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -48,24 +50,73 @@ func TestPoCSmokeScript_ExercisesCoreGatewayFlow(t *testing.T) {
 			if req.ParentID != "root" {
 				t.Fatalf("expected parent_id root, got %q", req.ParentID)
 			}
-			if req.Name != "poc-smoke.txt" {
+			if req.Name != "poc-smoke.txt" && req.Name != "multi-poc-smoke.txt" {
 				t.Fatalf("expected smoke file name, got %q", req.Name)
 			}
 			content, err := base64.StdEncoding.DecodeString(req.ContentBase64)
 			if err != nil {
 				t.Fatalf("decode upload content: %v", err)
 			}
-			uploaded = content
-			uploadCalled = true
+			fileID := fmt.Sprintf("file-%d", nextID)
+			nextID++
+			uploads[fileID] = content
+			nameByID[fileID] = req.Name
 
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"file_id":     "file-1",
-				"session_id":  "session-1",
+				"file_id":     fileID,
+				"session_id":  "session-" + fileID,
 				"chunk_count": 1,
 			})
-		case r.Method == http.MethodGet && r.URL.Path == "/files/file-1":
-			if deleted {
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/files/") && strings.HasSuffix(r.URL.Path, "/chunks"):
+			fileID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/files/"), "/chunks")
+			content, ok := uploads[fileID]
+			if !ok || deleted[fileID] {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"Chunks": []map[string]any{
+					{
+						"ID":     "chunk-" + fileID,
+						"FileID": fileID,
+						"Index":  0,
+						"Offset": 0,
+						"Size":   len(content),
+						"Status": "available",
+					},
+				},
+			})
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/files/") && strings.HasSuffix(r.URL.Path, "/download-plan"):
+			fileID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/files/"), "/download-plan")
+			content, ok := uploads[fileID]
+			if !ok || deleted[fileID] {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"Plan": map[string]any{
+					"FileID":     fileID,
+					"Size":       len(content),
+					"ChunkCount": 1,
+					"Chunks": []map[string]any{
+						{
+							"ChunkID":          "chunk-" + fileID,
+							"Index":            0,
+							"Offset":           0,
+							"Size":             len(content),
+							"PreferredNodeID":  "node-1",
+							"CandidateNodeIDs": []string{"node-1"},
+						},
+					},
+				},
+			})
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/files/"):
+			fileID := strings.TrimPrefix(r.URL.Path, "/files/")
+			content, ok := uploads[fileID]
+			if !ok || deleted[fileID] {
 				w.WriteHeader(http.StatusBadGateway)
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(map[string]any{
@@ -76,25 +127,29 @@ func TestPoCSmokeScript_ExercisesCoreGatewayFlow(t *testing.T) {
 				})
 				return
 			}
-			if !uploadCalled {
-				t.Fatalf("metadata requested before upload")
-			}
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"File": map[string]any{
-					"ID":   "file-1",
-					"Name": "poc-smoke.txt",
-					"Size": len(uploaded),
+					"ID":   fileID,
+					"Name": nameByID[fileID],
+					"Size": len(content),
 				},
 			})
-		case r.Method == http.MethodGet && r.URL.Path == "/downloads/file-1":
-			if deleted {
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/downloads/"):
+			fileID := strings.TrimPrefix(r.URL.Path, "/downloads/")
+			content, ok := uploads[fileID]
+			if !ok || deleted[fileID] {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
-			_, _ = w.Write(uploaded)
-		case r.Method == http.MethodDelete && r.URL.Path == "/files/file-1":
-			deleted = true
+			_, _ = w.Write(content)
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/files/"):
+			fileID := strings.TrimPrefix(r.URL.Path, "/files/")
+			if _, ok := uploads[fileID]; !ok {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			deleted[fileID] = true
 			w.WriteHeader(http.StatusNoContent)
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
@@ -110,6 +165,7 @@ func TestPoCSmokeScript_ExercisesCoreGatewayFlow(t *testing.T) {
 		"GATEWAY_BASE_URL="+server.URL,
 		"SMOKE_PARENT_ID=root",
 		"SMOKE_FILE_NAME=poc-smoke.txt",
+		"SMOKE_LARGE_BYTES=4194432",
 	)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
