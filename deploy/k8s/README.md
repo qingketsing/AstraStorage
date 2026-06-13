@@ -13,6 +13,20 @@ This directory groups Kubernetes manifests by component.
 
 ## Apply Order
 
+Quick local development deployment:
+
+```bash
+bash scripts/deploy-k8s.sh
+```
+
+Run the PoC smoke flow after rollout:
+
+```bash
+bash scripts/deploy-k8s.sh --smoke
+```
+
+Manual apply order:
+
 ```bash
 kubectl apply -k deploy/k8s/base
 kubectl apply -k deploy/k8s/postgres

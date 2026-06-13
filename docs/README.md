@@ -19,3 +19,5 @@ For current project understanding, start with `architecture/`.
 For historical planning context, use `superpowers/`.
 
 For a delivery-oriented summary of startup steps, demo scope, and current boundaries, read [poc.md](/home/qingke/AstraStorage/docs/poc.md).
+
+For third-party deployment and operations handoff, read [deploy/third-party-handoff.md](/home/qingke/AstraStorage/docs/deploy/third-party-handoff.md).
